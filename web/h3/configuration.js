@@ -14,6 +14,11 @@
   const TURBO='minimax_h3_turbo_v4_step600_ema.safetensors';
   const CHARACTER_SWAP='h3_character_swap_pro4500_1000.safetensors';
   const ANIME_TO_REALISM='Anime2Realsim__H3.safetensors';
+  const SPATIAL_PHYSICS='wushu_spatial_physics_clean_3000_pruned.safetensors';
+  const VBVR='H3-Licon-VBVR-I2V.safetensors';
+  function isSpatialPhysics(name){return String(name||'').split(/[\\/]/).pop().toLowerCase()===SPATIAL_PHYSICS.toLowerCase();}
+  function isVBVR(name){return String(name||'').split(/[\\/]/).pop().toLowerCase()===VBVR.toLowerCase();}
+  function isSecondaryLoRA(name){return isSpatialPhysics(name)||isVBVR(name)||/Motion[_ -]Repair[_ -]V2/i.test(String(name||''))||/h3-realism-people/i.test(String(name||''));}
   function isAnimeToRealism(name){return String(name||'').split(/[\\/]/).pop().toLowerCase()===ANIME_TO_REALISM.toLowerCase();}
   function validateAnimeToRealism(spec){
     if(!(spec.loras||[]).some(x=>x.enabled&&isAnimeToRealism(x.name)))return;
@@ -68,6 +73,7 @@
   function pikaProfileCompatible(spec){return (spec.model_profile||'original')==='original'||(spec.model_profile==='singularity'&&spec.mode==='refs'&&String(spec.checkpoint||'').split(/[\\/]/).pop()==='Minimax-h3_Singularity_ref2va_v2_pruned_int8.safetensors');}
   function pikaSampling(variant){return {sampler_name:'euler',scheduler:'simple',cfg:1,denoise:1,shift_video:variant.family==='ref2va'?12:6,shift_audio:3};}
   function loraModeCompatible(name,mode){
+    if(isSpatialPhysics(name)||isVBVR(name))return true;
     const pika=pikaVariant(name);if(pika)return pika.family===(mode==='refs'?'ref2va':'fl2va');
     if(isCharacterSwap(name)||isAnimeToRealism(name))return mode==='refs';
     if(/turbo|lightx2v/i.test(name))return false;
@@ -104,7 +110,7 @@
     if(pika){
       const variant=pikaVariant(pika.name);if(!pikaProfileCompatible(s))s.model_profile='original';s.render_method='native';s.steps=variant.steps;
       s.sampling={...s.sampling,...pikaSampling(variant)};pika.strength=1;
-      for(const l of s.loras)if(l!==pika)l.enabled=false;
+      for(const l of s.loras)if(l!==pika&&(pikaVariant(l.name)||/turbo|lightx2v/i.test(l.name)))l.enabled=false;
     }
     if(pika||['turbo','turbo_ref'].includes(s.render_method)){
       s.enable_refine=false;s.refine=false;s.control={...s.control,enabled:false};s.audio_refinement={...s.audio_refinement,enabled:false};
@@ -126,7 +132,8 @@
     const active=(spec.loras||[]).filter(x=>x.enabled), selected=active.filter(x=>pikaVariant(x.name));
     if(!selected.length)return null;
     const lora=selected[0], variant=pikaVariant(lora.name);
-    if(active.length!==1||Number(lora.strength??1)!==1)throw Error('Pika Flex requires one adapter at strength 1.');
+    const speedAdapters=active.filter(x=>pikaVariant(x.name)||/turbo|lightx2v/i.test(x.name));
+    if(speedAdapters.length!==1||Number(lora.strength??1)!==1)throw Error('Pika Flex requires exactly one speed adapter at strength 1.');
     if(!pikaProfileCompatible(spec)||(spec.render_method||'native')!=='native'||variant.family!==(spec.mode==='refs'?'ref2va':'fl2va'))throw Error('Pika Flex requires Original or supported Singularity v2 References with the matching adapter.');
     if(Number(spec.steps)!==variant.steps)throw Error('Pika Flex requires '+variant.steps+' steps.');
     if(spec.enable_refine||spec.refine||spec.control?.enabled||spec.continuation||spec.audio_refinement?.enabled)throw Error('Pika Flex requires a single pass without refinement, ControlNet or continuation.');
@@ -136,6 +143,12 @@
   }
   function resolve(spec,caps={}){
     preservedReference(spec);
+    if(spec.facerefine?.enabled){
+      const fr=spec.facerefine;
+      if(fr.crop_factor!=null&&(Number(fr.crop_factor)<1.2||Number(fr.crop_factor)>8.0))throw Error('FaceRefine crop factor must be between 1.2 and 8.0.');
+      if(fr.base_denoise!=null&&(Number(fr.base_denoise)<0.05||Number(fr.base_denoise)>1.0))throw Error('FaceRefine denoise must be between 0.05 and 1.0.');
+      if(fr.feather!=null&&(Number(fr.feather)<2||Number(fr.feather)>128))throw Error('FaceRefine feather must be between 2 and 128.');
+    }
     const dials=spec.dials||[];
     if(!Array.isArray(dials))throw Error('Dials must be a list.');
     if(dials.filter(x=>x.enabled).length>12)throw Error('At most 12 Dials can be applied.');
@@ -199,5 +212,5 @@
     }
     return node;
   }
-  return {PIKA,pikaVariant,pikaWorkflow,selectionChanges,pikaPromptWarnings,promptQualityWarnings,preferredCheckpoint,pikaSampling,loraModeCompatible,preservedReference,normalizeSelection,selectionRestrictions,validatePika,TURBO_REF,TURBO,defaults,profiles,resolve,patchOptions,FL,REF,SINGULARITY_V2,CHARACTER_SWAP,isCharacterSwap,preferredCharacterSwap,validateCharacterSwap,ANIME_TO_REALISM,isAnimeToRealism,validateAnimeToRealism};
+  return {PIKA,pikaVariant,pikaWorkflow,selectionChanges,pikaPromptWarnings,promptQualityWarnings,preferredCheckpoint,pikaSampling,loraModeCompatible,preservedReference,normalizeSelection,selectionRestrictions,validatePika,TURBO_REF,TURBO,defaults,profiles,resolve,patchOptions,FL,REF,SINGULARITY_V2,CHARACTER_SWAP,isCharacterSwap,preferredCharacterSwap,validateCharacterSwap,ANIME_TO_REALISM,isAnimeToRealism,validateAnimeToRealism,SPATIAL_PHYSICS,isSpatialPhysics,VBVR,isVBVR,isSecondaryLoRA};
 });

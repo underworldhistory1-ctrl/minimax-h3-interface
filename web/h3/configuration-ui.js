@@ -35,6 +35,152 @@
   const swapPanel=document.createElement('details');
   swapPanel.innerHTML='<summary>Character replacement · experimental</summary><div class="workflow-help workflow-help-warning" data-guidance-key="swap" lang="en" dir="ltr">Upload one source video and the replacement character image in References, then identify the person to replace. The shortcut enables Character Swap and writes a replacement prompt; your chosen model, method and other adapters stay selected. Review duration and settings before Generate. Results are experimental; timing and expressions can drift.</div><label for="swapTarget">Person to replace in the source shot</label><input id="swapTarget" type="text" placeholder="e.g. the person in the red jacket"><button id="prepareSwap" type="button" class="button alt smallbtn">Apply replacement prompt preset</button><div class="tip" data-guidance-key="configHelp2" lang="en" dir="ltr">Add exactly one source video and one replacement image for this guided preset. Uses References with your selected checkpoint, method and other adapters; strength 1 is the initial default. No trigger word. Start with a 4–5 second continuous shot; timing and expressions may drift. Reuse source soundtrack separately if needed.</div>';
   panel.append(swapPanel);
+
+  const physicsPanel = document.createElement('details');
+  physicsPanel.id = 'physicsConsistencyPanel';
+  physicsPanel.innerHTML = '<summary>Physics &amp; Consistency LoRAs</summary>'
+    + '<div class="tip">Secondary adapters for dynamic physical collisions and anti-duplication object consistency. Fully stackable with Pika Flex Turbo and Singularity v2.</div>'
+    + '<div style="margin-top:10px">'
+      + '<label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input id="spatialPhysicsEnable" type="checkbox" style="width:auto"> <strong>Spatial &amp; Physics LoRA</strong></label>'
+      + '<div class="tip">wushu_spatial_physics: Realistic collisions, bounces, ball sports and dynamic trajectory physics. Recommended initial strength: 0.3.</div>'
+      + '<label for="spatialPhysicsStrength">Strength: <span id="spatialPhysicsVal">0.30</span></label>'
+      + '<input id="spatialPhysicsStrength" type="range" min="0.1" max="1.0" step="0.05" value="0.3">'
+    + '</div>'
+    + '<div style="margin-top:14px;border-top:1px solid #333;padding-top:10px">'
+      + '<label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input id="vbvrEnable" type="checkbox" style="width:auto"> <strong>Licon VBVR LoRA</strong></label>'
+      + '<div class="tip">H3-Licon-VBVR: Object consistency, anti-duplication, interpenetration avoidance and motion logic. (Trained on FL2VA/I2V; Ref2VA stack supported). Recommended strength: 0.3–0.5.</div>'
+      + '<label for="vbvrStrength">Strength: <span id="vbvrVal">0.50</span></label>'
+      + '<input id="vbvrStrength" type="range" min="0.1" max="1.0" step="0.05" value="0.5">'
+    + '</div>';
+  panel.append(physicsPanel);
+
+  const frPanel = document.createElement('details');
+  frPanel.id = 'faceRefinePanel';
+  frPanel.innerHTML = '<summary>H3 FaceRefine · Per-frame Face Restoration</summary>'
+    + '<div class="tip">Detects and crops faces per-frame, injects into H3 AV latent with native audio lipsync lock, applies per-frame denoise scheduling, and seamlessly stitches back with feathered boundary blending. Supports stylized/painterly 3D characters via CLIP Vision.</div>'
+    + '<div style="margin-top:10px">'
+      + '<label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input id="faceRefineEnable" type="checkbox" style="width:auto"> <strong>Enable H3 FaceRefine</strong></label>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">'
+        + '<div><label for="faceRefineCropFactor">Crop factor: <span id="faceRefineCropVal">2.5</span>×</label><input id="faceRefineCropFactor" type="range" min="1.5" max="4.0" step="0.1" value="2.5"></div>'
+        + '<div><label for="faceRefineDenoise">Denoise: <span id="faceRefineDenoiseVal">0.40</span></label><input id="faceRefineDenoise" type="range" min="0.15" max="0.70" step="0.05" value="0.40"></div>'
+      + '</div>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">'
+        + '<div><label for="faceRefineFeather">Feather (source px): <span id="faceRefineFeatherVal">6</span></label><input id="faceRefineFeather" type="range" min="2" max="32" step="2" value="6"></div>'
+        + '<div><label for="faceRefineIdentity">Identity Matching</label><select id="faceRefineIdentity"><option value="clip_vision" selected>CLIP Vision (Stylized 3D / Anime / Photo)</option><option value="largest_face">Auto Largest Face</option></select></div>'
+      + '</div>'
+    + '</div>';
+  panel.append(frPanel);
+  $('spatialPhysicsEnable').onchange = () => {
+    let pLoRA = state.loras.find(l=>H3Configuration.isSpatialPhysics(l.name));
+    if(!pLoRA) {
+      pLoRA = { name: H3Configuration.SPATIAL_PHYSICS, strength: 0.3, enabled: false };
+      state.loras.push(pLoRA);
+    }
+    pLoRA.enabled = $('spatialPhysicsEnable').checked;
+    pLoRA.strength = Number($('spatialPhysicsStrength').value);
+    $('spatialPhysicsVal').textContent = pLoRA.strength.toFixed(2);
+    renderLoras(); changed();
+  };
+  $('spatialPhysicsStrength').oninput = () => {
+    const val = Number($('spatialPhysicsStrength').value);
+    $('spatialPhysicsVal').textContent = val.toFixed(2);
+    const pLoRA = state.loras.find(l=>H3Configuration.isSpatialPhysics(l.name));
+    if(pLoRA) { pLoRA.strength = val; changed(); }
+  };
+
+  $('vbvrEnable').onchange = () => {
+    let vLoRA = state.loras.find(l=>H3Configuration.isVBVR(l.name));
+    if(!vLoRA) {
+      vLoRA = { name: H3Configuration.VBVR, strength: 0.5, enabled: false };
+      state.loras.push(vLoRA);
+    }
+    vLoRA.enabled = $('vbvrEnable').checked;
+    vLoRA.strength = Number($('vbvrStrength').value);
+    $('vbvrVal').textContent = vLoRA.strength.toFixed(2);
+    renderLoras(); changed();
+  };
+  $('vbvrStrength').oninput = () => {
+    const val = Number($('vbvrStrength').value);
+    $('vbvrVal').textContent = val.toFixed(2);
+    const vLoRA = state.loras.find(l=>H3Configuration.isVBVR(l.name));
+    if(vLoRA) { vLoRA.strength = val; changed(); }
+  };
+
+  $('faceRefineEnable').onchange = () => {
+    state.facerefine = state.facerefine || {};
+    state.facerefine.enabled = $('faceRefineEnable').checked;
+    changed();
+  };
+  $('faceRefineCropFactor').oninput = () => {
+    const val = Number($('faceRefineCropFactor').value);
+    $('faceRefineCropVal').textContent = val.toFixed(1);
+    state.facerefine = state.facerefine || {};
+    state.facerefine.crop_factor = val;
+    changed();
+  };
+  $('faceRefineDenoise').oninput = () => {
+    const val = Number($('faceRefineDenoise').value);
+    $('faceRefineDenoiseVal').textContent = val.toFixed(2);
+    state.facerefine = state.facerefine || {};
+    state.facerefine.base_denoise = val;
+    changed();
+  };
+  $('faceRefineFeather').oninput = () => {
+    const val = Number($('faceRefineFeather').value);
+    $('faceRefineFeatherVal').textContent = String(val);
+    state.facerefine = state.facerefine || {};
+    state.facerefine.feather = val;
+    changed();
+  };
+  $('faceRefineIdentity').onchange = () => {
+    state.facerefine = state.facerefine || {};
+    state.facerefine.identity_model = $('faceRefineIdentity').value;
+    changed();
+  };
+
+  function refreshPhysicsControls(){
+    const pLoRA = state.loras.find(l=>H3Configuration.isSpatialPhysics(l.name));
+    const vLoRA = state.loras.find(l=>H3Configuration.isVBVR(l.name));
+    if($('spatialPhysicsEnable')){
+      $('spatialPhysicsEnable').checked = !!pLoRA?.enabled;
+      $('spatialPhysicsEnable').disabled = state.busy || state.projectLoading || !pLoRA;
+      if(pLoRA && Number.isFinite(pLoRA.strength)) {
+        $('spatialPhysicsStrength').value = pLoRA.strength;
+        $('spatialPhysicsVal').textContent = Number(pLoRA.strength).toFixed(2);
+      }
+    }
+    if($('vbvrEnable')){
+      $('vbvrEnable').checked = !!vLoRA?.enabled;
+      $('vbvrEnable').disabled = state.busy || state.projectLoading || !vLoRA;
+      if(vLoRA && Number.isFinite(vLoRA.strength)) {
+        $('vbvrStrength').value = vLoRA.strength;
+        $('vbvrVal').textContent = Number(vLoRA.strength).toFixed(2);
+      }
+    }
+  }
+
+  function refreshFaceRefineControls(){
+    state.facerefine = state.facerefine || {};
+    const fr = state.facerefine;
+    if($('faceRefineEnable')){
+      $('faceRefineEnable').checked = !!fr.enabled;
+      $('faceRefineEnable').disabled = state.busy || state.projectLoading;
+      if(fr.crop_factor!=null) {
+        $('faceRefineCropFactor').value = fr.crop_factor;
+        $('faceRefineCropVal').textContent = Number(fr.crop_factor).toFixed(1);
+      }
+      if(fr.base_denoise!=null) {
+        $('faceRefineDenoise').value = fr.base_denoise;
+        $('faceRefineDenoiseVal').textContent = Number(fr.base_denoise).toFixed(2);
+      }
+      if(fr.feather!=null) {
+        $('faceRefineFeather').value = fr.feather;
+        $('faceRefineFeatherVal').textContent = String(fr.feather);
+      }
+      if(fr.identity_model) $('faceRefineIdentity').value = fr.identity_model;
+    }
+  }
+
   document.querySelector('.model-hero').after(panel);H3Guidance.apply(panel);
   $('prepareSwap').onclick=()=>{
     if(state.busy)return;
@@ -113,6 +259,8 @@
     await schemas();
     const caps=state.labCapabilities||{},profile=state.modelProfile||'original';
     renderLoras();
+    refreshPhysicsControls();
+    refreshFaceRefineControls();
     $('modelProfile').value=profile;document.body.dataset.modelAccent=H3Configuration.profiles[profile]?.accent||'original';
     document.querySelector('.model-hero h1').textContent=profile==='original'?'MiniMax H3':H3Configuration.profiles[profile]?.label||'MiniMax H3';
     document.querySelector('.model-hero .eyebrow').textContent=profile==='original'?'MODEL · H3 BASE':'MODEL · COMMUNITY CHECKPOINT';

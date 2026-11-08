@@ -5,6 +5,8 @@ REF = 'minimax_h3_ref2va_pruned_int8_convrot.safetensors'
 CHARACTER_SWAP = 'h3_character_swap_pro4500_1000.safetensors'
 CHARACTER_SWAPS = (CHARACTER_SWAP, 'h3_character_swap_v1.5.safetensors')
 ANIME_TO_REALISM = 'Anime2Realsim__H3.safetensors'
+SPATIAL_PHYSICS = 'wushu_spatial_physics_clean_3000_pruned.safetensors'
+VBVR = 'H3-Licon-VBVR-I2V.safetensors'
 
 
 def validate_audio_refinement(spec, capabilities):
@@ -163,24 +165,36 @@ def _before_dials(graph, link):
 
 def validate_pika(spec):
     graph = spec.get('workflow', {})
-    nodes = [(key, n) for key, n in graph.items() if n.get('inputs', {}).get('lora_name') in PIKA]
+    nodes = [(k, n) for k, n in graph.items() if n.get('inputs', {}).get('lora_name') in PIKA]
     active = [l for l in spec.get('loras', []) if l.get('enabled')]
     selected = [l for l in active if l.get('name') in PIKA]
     if not nodes and not selected:
         return False
-    if len(nodes) != 1 or len(selected) != 1 or len(active) != 1 or 'model_profile' not in spec:
+    speed_active = [l for l in active if l.get('name') in PIKA or any(x in l.get('name', '').lower() for x in ('turbo', 'lightx2v'))]
+    if len(nodes) != 1 or len(selected) != 1 or len(speed_active) != 1 or 'model_profile' not in spec:
         raise ValueError('Pika Flex requires one explicit adapter and configuration contract')
     key, node = nodes[0]; lora = selected[0]; name = lora['name']; steps, family = PIKA[name]
     supported_profile = spec['model_profile'] == 'original' or (spec['model_profile'] == 'singularity' and spec.get('mode') == 'refs' and str(spec.get('checkpoint', '')).replace('\\', '/').rsplit('/', 1)[-1] == 'Minimax-h3_Singularity_ref2va_v2_pruned_int8.safetensors')
     if not supported_profile or spec.get('render_method', 'native') != 'native' or family != ('ref2va' if spec.get('mode') == 'refs' else 'fl2va'):
         raise ValueError('Pika Flex requires Original or supported Singularity v2 References and its matching transformer')
-    if lora.get('strength', 1) != 1 or node.get('class_type') != 'LoraLoaderModelOnly' or node.get('inputs') != {'model': ['1', 0], 'lora_name': name, 'strength_model': 1}:
+    if lora.get('strength', 1) != 1 or node.get('class_type') != 'LoraLoaderModelOnly' or node.get('inputs', {}).get('lora_name') != name or node.get('inputs', {}).get('strength_model') != 1:
         raise ValueError('Pika Flex adapter wiring or strength disagrees')
     if any(spec.get(k) for k in ('enable_refine', 'refine', 'continuation')) or (spec.get('control') or {}).get('enabled') or (spec.get('audio_refinement') or {}).get('enabled'):
         raise ValueError('Pika Flex requires a single pass without additional processing')
-    if sum(n.get('class_type') == 'LoraLoaderModelOnly' for n in graph.values()) != 1 or sum('sampler' in n.get('class_type', '').lower() for n in graph.values()) != 1:
-        raise ValueError('Pika Flex requires one adapter and one sampler')
-    if _before_dials(graph,graph.get('2', {}).get('inputs', {}).get('model')) != [key, 0] or graph.get('8', {}).get('inputs', {}).get('model') != ['2', 0]:
+    if sum(n.get('class_type') == 'LoraLoaderModelOnly' for n in graph.values()) != len(active) or (not spec.get('facerefine') and sum('sampler' in n.get('class_type', '').lower() for n in graph.values()) != 1):
+        raise ValueError('Pika Flex requires approved adapters and single sampler')
+    
+    # Trace model link backwards through any chained secondary LoRAs to ensure Pika is the foundation
+    curr_link = _before_dials(graph, graph.get('2', {}).get('inputs', {}).get('model'))
+    while isinstance(curr_link, list) and len(curr_link) == 2 and isinstance(curr_link[0], str) and curr_link[0] in graph:
+        if curr_link[0] == key:
+            break
+        n_curr = graph[curr_link[0]]
+        if n_curr.get('class_type') == 'LoraLoaderModelOnly':
+            curr_link = n_curr.get('inputs', {}).get('model')
+        else:
+            break
+    if curr_link != [key, 0]:
         raise ValueError('Pika Flex model path disagrees')
     if graph.get('13', {}).get('inputs', {}).get('samples') != ['8', 0] or any(graph.get(key, {}).get('inputs', {}).get('samples') != ['13', 0] for key in ('9', '10')):
         raise ValueError('Pika Flex decode must follow the approved single sampler')
@@ -208,7 +222,11 @@ def _validate_execution_path(spec, graph, audio_sampler, capabilities):
         result=[];seen=set()
         while isinstance(link,list) and len(link)==2 and isinstance(link[0],str) and link[0] in graph:
             key=link[0]
-            expected_slot=1 if field=='audio' and graph[key].get('class_type')=='H3LabTrimAV' else 0
+            if field == 'audio':
+                kt = graph[key].get('class_type')
+                expected_slot = 1 if kt == 'H3LabTrimAV' else (2 if kt == 'MiniMaxH3NativeAudioLock' else 0)
+            else:
+                expected_slot = 0
             if type(link[1]) is not int or link[1]!=expected_slot: raise ValueError('Invalid configuration output slot')
             if key in seen: raise ValueError('Configuration graph contains a cycle')
             seen.add(key);result.append(key);link=node(key).get(field)
@@ -222,7 +240,16 @@ def _validate_execution_path(spec, graph, audio_sampler, capabilities):
     node('11','CreateVideo');node('13','H3ReleaseForDecode')
     for key,klass in [('9','VAEDecode'),('10','VAEDecodeAudio')]:
         if node(key,klass).get('samples') != ['13',0]: raise ValueError('Decoders must consume the final selected pass')
-    image_path=chain(node('11').get('images'),'image')
+    def _trace_images(link):
+        res, seen = [], set()
+        while isinstance(link, list) and len(link) == 2 and isinstance(link[0], str) and link[0] in graph:
+            k = link[0]
+            if k in seen: break
+            seen.add(k); res.append(k)
+            inp = graph[k].get('inputs', {})
+            link = inp.get('image') or inp.get('images') or inp.get('base_images')
+        return res
+    image_path = _trace_images(node('11').get('images'))
     # Continuation trim has an images input rather than image.
     if '9' not in image_path:
         trim=next((key for key in image_path if graph[key].get('class_type')=='H3LabTrimAV'),None)
@@ -241,7 +268,8 @@ def _validate_execution_path(spec, graph, audio_sampler, capabilities):
         if lora.get('enabled'):
             import re
             fl=bool(re.search(r'fl2v|t2v',lora['name'],re.I));ref=bool(re.search(r'ref2v|r2v',lora['name'],re.I))
-            if (spec.get('mode')=='refs' and fl and not ref) or (spec.get('mode')!='refs' and ref and not fl):raise ValueError('LoRA is unsupported in the selected input mode/family')
+            if lora['name'] not in (SPATIAL_PHYSICS, VBVR):
+                if (spec.get('mode')=='refs' and fl and not ref) or (spec.get('mode')!='refs' and ref and not fl):raise ValueError('LoRA is unsupported in the selected input mode/family')
     positive=chain(base.get('positive'),'positive')
     guides=spec.get('guides') or []
     if len(positive)!=len(guides)+1 or not positive or positive[-1]!='6' or any(graph[key].get('class_type')!='MiniMaxH3AddGuide' for key in positive[:-1]): raise ValueError('Selected temporal guides/conditioning disagree')
@@ -289,6 +317,9 @@ def _validate_execution_path(spec, graph, audio_sampler, capabilities):
     sampling_width = (width + 31)//32*32 if exact1080 else width
     sampling_height = (height + 31)//32*32 if exact1080 else height
     output_link = node('11').get('images')
+    if spec.get('facerefine') and spec.get('facerefine', {}).get('enabled'):
+        stitch = node(linked(output_link), 'H3FaceStitch')
+        output_link = stitch.get('base_images')
     if exact1080:
         crop = node(linked(output_link), 'ImageCrop')
         expected = {'width': width, 'height': height, 'x': (sampling_width-width)/2, 'y': (sampling_height-height)/2}
@@ -357,7 +388,16 @@ def _validate_execution_path(spec, graph, audio_sampler, capabilities):
         if [(l.get('lora_name'),l.get('strength_model')) for l in actual]!=expected: raise ValueError('Connected LoRA chain disagrees with the selected pass')
     check_loras(models)
     refine=bool(spec.get('enable_refine') or spec.get('refine'))
-    refiners=[key for key,n in graph.items() if n.get('class_type')=='KSampler' and key not in ('8',audio_sampler)]
+    fr_sampler = None
+    if spec.get('facerefine') and spec.get('facerefine', {}).get('enabled'):
+        for k, n in graph.items():
+            if n.get('class_type') == 'KSampler' and k not in ('8', audio_sampler):
+                m_in = n.get('inputs', {}).get('model')
+                if isinstance(m_in, list) and len(m_in) == 2 and m_in[0] in graph:
+                    if graph[m_in[0]].get('class_type') == 'H3PerFrameDenoise':
+                        fr_sampler = k
+                        break
+    refiners=[key for key,n in graph.items() if n.get('class_type')=='KSampler' and key not in ('8',audio_sampler,fr_sampler)]
     if len(refiners)!=(1 if refine else 0): raise ValueError('Selected refinement pass disagrees with graph')
     final=['8',0]
     if refine:

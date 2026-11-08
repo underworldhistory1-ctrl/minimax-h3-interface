@@ -57,6 +57,43 @@ def check_capabilities(folder_paths_module=None, nodes_module=None) -> dict:
     # Optional paths remain independent of baseline readiness.
     from .control import CONTROL_FILE, CONTROL_SIZE
     control_nodes = ['ModelPatchLoader', 'MiniMaxH3FunControlNetApply', 'LoadVideo', 'GetVideoComponents', 'LoadImage', 'ImageToMask']
+    # FaceRefine capability detection
+    facerefine_nodes = ["H3FaceTrackCrop", "H3FaceStitch", "MiniMaxH3NativeAudioLock", "H3InjectVideoLatent", "H3PerFrameDenoise"]
+    facerefine_ready = all(name in registered_nodes for name in facerefine_nodes)
+    facerefine_detectors = []
+    clip_vision_models = []
+    if folder_paths_module:
+        base_models = getattr(folder_paths_module, "models_dir", None)
+        if base_models and hasattr(folder_paths_module, "add_model_folder_path"):
+            u_dir = os.path.join(base_models, "ultralytics")
+            if os.path.isdir(u_dir):
+                folder_paths_module.add_model_folder_path("ultralytics", u_dir)
+                bbox_dir = os.path.join(u_dir, "bbox")
+                if os.path.isdir(bbox_dir):
+                    folder_paths_module.add_model_folder_path("ultralytics_bbox", bbox_dir)
+                segm_dir = os.path.join(u_dir, "segm")
+                if os.path.isdir(segm_dir):
+                    folder_paths_module.add_model_folder_path("ultralytics_segm", segm_dir)
+        if hasattr(folder_paths_module, "get_filename_list"):
+            for sub in ("ultralytics_bbox", "ultralytics"):
+                try:
+                    facerefine_detectors.extend(folder_paths_module.get_filename_list(sub))
+                except Exception:
+                    pass
+        if base_models:
+            for sub in ("ultralytics/bbox", "ultralytics", "ultralytics/segm"):
+                d = os.path.join(base_models, *sub.split("/"))
+                if os.path.isdir(d):
+                    for f in os.listdir(d):
+                        if f.endswith(".pt") and f not in facerefine_detectors:
+                            facerefine_detectors.append(f)
+        try:
+            clip_vision_models.extend(folder_paths_module.get_filename_list("clip_vision"))
+        except Exception:
+            pass
+    facerefine_detectors = list(dict.fromkeys(facerefine_detectors))
+    clip_vision_models = list(dict.fromkeys(clip_vision_models))
+
     control_missing = [f"Required ControlNet node '{name}' is not registered." for name in control_nodes if name not in registered_nodes]
     control_weight = False
     if folder_paths_module:
@@ -162,6 +199,11 @@ def check_capabilities(folder_paths_module=None, nodes_module=None) -> dict:
         "guides_ready": add_guide_ready and all(native_status.values()) and bool(base_fl_ready),
         "continuation_nodes": continuation_status,
         "models": models_status,
+        "facerefine_ready": facerefine_ready and len(facerefine_detectors) > 0,
+        "facerefine_detectors": facerefine_detectors,
+        "clip_vision_models": clip_vision_models,
+        "spatial_physics_ready": folder_paths_module.get_full_path("loras", "wushu_spatial_physics_clean_3000_pruned.safetensors") is not None if folder_paths_module else False,
+        "vbvr_ready": folder_paths_module.get_full_path("loras", "H3-Licon-VBVR-I2V.safetensors") is not None if folder_paths_module else False,
         "continuation_ready": all(continuation_status.values()) and all(native_status.values()) and bool(base_fl_ready),
         "ready": len(missing_reasons) == 0,
         "missing_reasons": missing_reasons,
