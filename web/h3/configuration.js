@@ -5,9 +5,11 @@
   const defaults=Object.freeze({sampler_name:'res_multistep',scheduler:'simple',cfg:1,denoise:1,shift_video:12,shift_audio:3,weight_dtype:'default'});
   const profiles=Object.freeze({original:{label:'Original H3',accent:'original'},singularity:{label:'H3 Singularity',accent:'singularity'},hybrid_conditioning:{label:'Hybrid · FL2VA reference conditioning',accent:'hybrid'},hybrid_loader:{label:'Hybrid · tensor overlay loader',accent:'hybrid'}});
   const SINGULARITY_V2='Minimax-h3_Singularity_ref2va_v2_pruned_int8.safetensors';
-  function preferredCheckpoint(profile,caps,current=null){
+  function preferredCheckpoint(profile,caps={},current=null){
     const names=(caps.model_catalog||[]).filter(x=>x.profiles?.includes(profile)).map(x=>x.name);
-    return names.includes(current)?current:profile==='singularity'&&names.includes(SINGULARITY_V2)?SINGULARITY_V2:names[0]||null;
+    if(current && (names.includes(current) || current===SINGULARITY_V2)) return current;
+    if(profile==='singularity') return names.includes(SINGULARITY_V2) ? SINGULARITY_V2 : (names[0] || SINGULARITY_V2);
+    return names[0]||null;
   }
   function filename(value){if(typeof value!=='string'||!value||value.includes('..')||/[\\\x00-\x1f]/.test(value)||value.startsWith('/')||/^[a-z]+:/i.test(value))throw Error('Invalid model filename.');return value;}
   const TURBO_REF='minimax_h3_ref2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors';
@@ -70,7 +72,15 @@
     if(spec.model_profile==='singularity'&&spec.checkpoint===SINGULARITY_V2&&count>5000)notes.push('Compiled Singularity v2 prompt: '+count.toLocaleString('en-US')+' characters. Its publisher recommends focused prompts within approximately 5,000 characters. This is advice, not a minimum or a hard model limit; Studio has not truncated your prompt.');
     return notes.concat(warnings.filter(w=>w.includes('reference card roles, panel order and instructions are bypassed')));
   }
-  function pikaProfileCompatible(spec){return (spec.model_profile||'original')==='original'||(spec.model_profile==='singularity'&&spec.mode==='refs'&&String(spec.checkpoint||'').split(/[\\/]/).pop()==='Minimax-h3_Singularity_ref2va_v2_pruned_int8.safetensors');}
+  function pikaProfileCompatible(spec){
+    const profile = spec.model_profile || 'original';
+    if(profile === 'original') return true;
+    if(profile === 'singularity'){
+      const ckpt = spec.checkpoint ? String(spec.checkpoint).split(/[\/]/).pop() : SINGULARITY_V2;
+      return ckpt === SINGULARITY_V2 && spec.mode === 'refs';
+    }
+    return false;
+  }
   function pikaSampling(variant){return {sampler_name:'euler',scheduler:'simple',cfg:1,denoise:1,shift_video:variant.family==='ref2va'?12:6,shift_audio:3};}
   function loraModeCompatible(name,mode){
     if(isSpatialPhysics(name)||isVBVR(name))return true;
@@ -93,10 +103,16 @@
   function normalizeSelection(spec,action,caps={}){
     if(action==='restore')return {...spec};
     const s={...spec,sampling:{...spec.sampling},loras:(spec.loras||[]).map(x=>({...x}))};
+    if(s.model_profile==='singularity'){
+      if(!s.checkpoint) s.checkpoint=preferredCheckpoint('singularity',caps)||SINGULARITY_V2;
+      if(action==='profile'&&s.mode!=='refs'){
+        s.mode='refs';
+      }
+    }
     if(action==='mode'&&s.mode!=='refs')s.preserve_reference_audio=null;
     let pika=s.loras.find(x=>x.enabled&&pikaVariant(x.name));
     if(action==='continuation'&&s.continuation){for(const l of s.loras)if(pikaVariant(l.name))l.enabled=false;pika=null;if(['turbo','turbo_ref'].includes(s.render_method)){s.render_method='native';s.steps=20;}s.enable_refine=false;s.refine=false;s.control={...s.control,enabled:false};}
-    if(action==='mode'&&pika){
+    if((action==='mode'||action==='profile')&&pika){
       const variant=pikaVariant(pika.name),family=s.mode==='refs'?'ref2va':'fl2va';
       if(variant.family!==family){const name=Object.keys(PIKA).find(n=>PIKA[n].steps===variant.steps&&PIKA[n].variant===variant.variant&&PIKA[n].family===family),other=s.loras.find(x=>x.name===name);pika.enabled=false;if(other){other.enabled=true;pika=other;}else pika=null;}
     }

@@ -69,11 +69,15 @@ const methodInfo = {
 methodInfo.turbo_ref={title:'References Turbo · LightX2V 8-step v1.0',detail:'Original Ref2VA with native references. 8 Euler/simple steps, strength1.0, shifts12/3. Review identity, motion and audio; no other adapters or extra passes.'};
 const turboMethod=()=>method()==='turbo'||method()==='turbo_ref';
 const method = () => $("renderMethod").value;
-const selectedCheckpoint=()=>state.modelProfile&&state.modelProfile!=="original"?(state.modelProfile==="singularity"?state.checkpoint:modelFL):(state.mode==="refs"?modelRef:modelFL);
+const selectedCheckpoint=()=>state.modelProfile&&state.modelProfile!=="original"?(state.modelProfile==="singularity"?(state.checkpoint||H3Configuration.SINGULARITY_V2):modelFL):(state.mode==="refs"?modelRef:modelFL);
 const refinementSettings=()=>({scale:state.refineScale??1.25,steps:10,denoise:.4,cfg:1,sampler_name:'res_multistep',scheduler:'simple',...state.refinement});
 function selectedModelReady(mode=state.mode){
   if(!state.modelProfile||state.modelProfile==='original')return !!state.modelsReady?.[mode==='refs'?'ref2va':'fl2va'];
   if(state.modelProfile==='hybrid_loader'&&(!state.labCapabilities?.hybrid_loader_ready||state.hybridPreset&&state.hybridPreset!=='none'&&!state.modelsReady?.ref2va))return false;
+  if(state.modelProfile==='singularity'){
+    const target=selectedCheckpoint()||H3Configuration.SINGULARITY_V2;
+    return (state.labCapabilities?.model_catalog||[]).some(x=>x.name===target&&x.profiles.includes('singularity')) || target===H3Configuration.SINGULARITY_V2;
+  }
   return (state.labCapabilities?.model_catalog||[]).some(x=>x.name===selectedCheckpoint()&&x.profiles.includes(state.modelProfile));
 }
 const storeKey = "h3studio.render.v2";
@@ -189,7 +193,7 @@ function applySelection(action,before=null){
   if(previous.loras.some(l=>l.enabled&&H3Configuration.pikaVariant(l.name))&&!next.loras.some(l=>l.enabled&&H3Configuration.pikaVariant(l.name))){next.sampling={...(state.pikaBefore?.sampling||H3Configuration.defaults)};if(!['turbo','turbo_ref'].includes(next.render_method))next.steps=state.pikaBefore?.steps>=8?state.pikaBefore.steps:20;delete state.pikaBefore;next=H3Configuration.normalizeSelection(next,action,state.labCapabilities||{});}
   state.modelProfile=next.model_profile;state.sampling=next.sampling;state.loras=next.loras.map(l=>Object.assign(state.loras.find(old=>old.name===l.name)||{},l));state.control=next.control||{enabled:false};state.audioRefinement=next.audio_refinement||{};
   state.preserveReferenceAudio=!!next.preserve_reference_audio;if(!state.preserveReferenceAudio)state.preserveAudioSource=null;
-  if(previous.model_profile!==next.model_profile)state.checkpoint=null;
+  if(previous.model_profile!==next.model_profile){state.checkpoint=H3Configuration.preferredCheckpoint(next.model_profile,state.labCapabilities||{});}
   $('renderMethod').value=next.render_method;$('steps').value=String(next.steps);$('enableRefine').checked=!!next.enable_refine;
   if($('enableControl'))$('enableControl').checked=!!state.control.enabled;
   if(!selectedPika()&&Number($('steps').value)<8&&!turboMethod())restorePikaSampling();

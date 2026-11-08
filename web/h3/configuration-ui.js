@@ -201,7 +201,22 @@
   $('modelProfile').onchange=()=>{
     if(state.busy)return;
     if(state.continuation?.type==='generated'){info('Re-encode the source video before changing checkpoint families.',true);$('modelProfile').value=state.modelProfile||'original';return;}
-    state.modelProfile=$('modelProfile').value;state.checkpoint=H3Configuration.preferredCheckpoint(state.modelProfile,state.labCapabilities||{});applySelection('profile');refresh().then(()=>{changed();updateCapabilities();});
+    const profile=$('modelProfile').value;
+    state.modelProfile=profile;
+    if(profile==='singularity'){
+      state.checkpoint=H3Configuration.preferredCheckpoint('singularity',state.labCapabilities||{})||H3Configuration.SINGULARITY_V2;
+      if(state.mode!=='refs'){
+        selectMode('refs');
+      }
+      const pikaRef=state.loras.find(l=>l.name==='pika_h3_flex_turbo_8step_hd_ref2va.safetensors');
+      if(pikaRef&&!state.loras.some(l=>l.enabled&&H3Configuration.pikaVariant(l.name))){
+        pikaRef.enabled=true;pikaRef.strength=1;
+      }
+    }else{
+      state.checkpoint=H3Configuration.preferredCheckpoint(profile,state.labCapabilities||{});
+    }
+    applySelection('profile');
+    refresh().then(()=>{changed();updateCapabilities();});
   };
   $('checkpoint').onchange=()=>{if(state.busy)return;state.checkpoint=$('checkpoint').value;applySelection('profile');refresh();changed();updateCapabilities();};
   $('hybridPreset').onchange=()=>{state.hybridPreset=$('hybridPreset').value;changed();};
@@ -264,11 +279,22 @@
     $('modelProfile').value=profile;document.body.dataset.modelAccent=H3Configuration.profiles[profile]?.accent||'original';
     document.querySelector('.model-hero h1').textContent=profile==='original'?'MiniMax H3':H3Configuration.profiles[profile]?.label||'MiniMax H3';
     document.querySelector('.model-hero .eyebrow').textContent=profile==='original'?'MODEL · H3 BASE':'MODEL · COMMUNITY CHECKPOINT';
-    for(const option of $('modelProfile').options)option.disabled=option.value!=='original'&&(!(caps.model_catalog||[]).some(x=>x.profiles.includes(option.value))||option.value==='hybrid_loader'&&!caps.hybrid_loader_ready);
+    for(const option of $('modelProfile').options){
+      if(option.value==='original'||option.value==='singularity'){
+        option.disabled=false;
+      } else {
+        option.disabled=!(caps.model_catalog||[]).some(x=>x.profiles.includes(option.value))||(option.value==='hybrid_loader'&&!caps.hybrid_loader_ready);
+      }
+    }
     const select=$('checkpoint');select.replaceChildren();
     const names=profile==='original'?[state.mode==='refs'?modelRef:modelFL]:(caps.model_catalog||[]).filter(x=>x.profiles.includes(profile)).map(x=>x.name);
+    if(profile==='singularity'&&!names.includes(H3Configuration.SINGULARITY_V2)) names.push(H3Configuration.SINGULARITY_V2);
     if(profile!=='original'&&state.checkpoint&&!names.includes(state.checkpoint))names.unshift(state.checkpoint);
-    for(const name of names){const o=document.createElement('option');o.value=name;o.textContent=name;o.disabled=profile!=='original'&&!(caps.model_catalog||[]).some(x=>x.name===name);select.append(o);}
+    for(const name of names){
+      const o=document.createElement('option');o.value=name;o.textContent=name;
+      o.disabled=profile!=='original'&&!(caps.model_catalog||[]).some(x=>x.name===name)&&name!==H3Configuration.SINGULARITY_V2;
+      select.append(o);
+    }
     if(names.length&&(profile==='original'||!state.checkpoint))state.checkpoint=profile==='original'?names[0]:H3Configuration.preferredCheckpoint(profile,caps);select.value=state.checkpoint||'';
     select.disabled=state.busy||state.projectLoading||profile==='original';$('modelProfile').disabled=state.busy||state.projectLoading;
     $('hybridPreset').hidden=profile!=='hybrid_loader';document.querySelector('label[for="hybridPreset"]').hidden=profile!=='hybrid_loader';$('hybridPreset').value=state.hybridPreset||'none';
