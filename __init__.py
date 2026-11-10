@@ -260,7 +260,7 @@ def _safe_input_path(filename):
                    INPUT_PREFIX, INPUT_EXTS)
 
 
-async def _normalize_reference_video(source, target, trim_start=0.0, trim_duration=None, fit=False):
+async def _normalize_reference_video(source, target, trim_start=0.0, trim_duration=None, fit=False, has_audio=False):
     """Convert, optionally trim and fit a reference without changing playback speed."""
     filters = []
     if fit:
@@ -275,6 +275,7 @@ async def _normalize_reference_video(source, target, trim_start=0.0, trim_durati
         "-map", "0:v:0", "-map", "0:a:0?",
         "-vf", ",".join(filters), "-r", "24", "-c:v", "libx264", "-preset", "veryfast",
         "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac",
+        *(["-af", "aresample=48000:async=1:first_pts=0"] if has_audio else []),
         "-b:a", "192k", "-movflags", "+faststart", target,
     ]
     try:
@@ -397,7 +398,8 @@ async def upload_ref(request):
                         raise ValueError("H3 reference videos must be 2–15 seconds long. Select a 2–15 second trim.")
                     info.update(duration=round(duration, 2), fps=round(fps, 2), has_audio=bool(media.streams.audio),
                                 frame_count=stream.frames or sum(1 for _ in media.decode(stream)), source_duration=round(duration, 2), source_width=stream.width, source_height=stream.height,
-                                trim_adjusted=trim_adjusted)
+                                trim_adjusted=trim_adjusted,
+                                audio_start_offset=max(0.0, float(media.streams.audio[0].start_time or 0) * float(media.streams.audio[0].time_base) - float(stream.start_time or 0) * float(stream.time_base)) if media.streams.audio else 0.0)
                 else:
                     if not media.streams.audio:
                         raise ValueError("This file has no audio stream.")
@@ -435,6 +437,7 @@ async def upload_ref(request):
             info.update(duration=round(actual, 2), trim_start=trim_start, trim_duration=trim_duration, trimmed=True)
         if kind == "video":
             needs_norm = (
+                info.get("audio_start_offset", 0) > 0.001 or
                 abs(float(info["fps"]) - 24.0) > 0.001 or
                 trim_duration is not None or
                 bool(trim_start) or
@@ -445,7 +448,7 @@ async def upload_ref(request):
                 normalized_name = f"{INPUT_PREFIX}_{uuid.uuid4().hex}.mp4"
                 normalized_path = _safe_input_path(normalized_name)
                 await _normalize_reference_video(path, normalized_path, trim_start, trim_duration,
-                                                 resize and (info["source_width"] > 1920 or info["source_height"] > 1080))
+                                                 resize and (info["source_width"] > 1920 or info["source_height"] > 1080), has_audio=info["has_audio"])
                 if os.path.getsize(normalized_path) > limits["video"]:
                     raise ValueError("The 24 fps reference video is too large.")
                 with av.open(normalized_path) as normalized:

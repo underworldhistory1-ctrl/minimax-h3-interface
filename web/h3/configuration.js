@@ -72,15 +72,7 @@
     if(spec.model_profile==='singularity'&&spec.checkpoint===SINGULARITY_V2&&count>5000)notes.push('Compiled Singularity v2 prompt: '+count.toLocaleString('en-US')+' characters. Its publisher recommends focused prompts within approximately 5,000 characters. This is advice, not a minimum or a hard model limit; Studio has not truncated your prompt.');
     return notes.concat(warnings.filter(w=>w.includes('reference card roles, panel order and instructions are bypassed')));
   }
-  function pikaProfileCompatible(spec){
-    const profile = spec.model_profile || 'original';
-    if(profile === 'original') return true;
-    if(profile === 'singularity'){
-      const ckpt = spec.checkpoint ? String(spec.checkpoint).split(/[\/]/).pop() : SINGULARITY_V2;
-      return ckpt === SINGULARITY_V2 && spec.mode === 'refs';
-    }
-    return false;
-  }
+  function pikaProfileCompatible(spec){return (spec.model_profile||'original')==='original'||(spec.model_profile==='singularity'&&spec.mode==='refs'&&String(spec.checkpoint||'').split(/[\\/]/).pop()==='Minimax-h3_Singularity_ref2va_v2_pruned_int8.safetensors');}
   function pikaSampling(variant){return {sampler_name:'euler',scheduler:'simple',cfg:1,denoise:1,shift_video:variant.family==='ref2va'?12:6,shift_audio:3};}
   function loraModeCompatible(name,mode){
     if(isSpatialPhysics(name)||isVBVR(name))return true;
@@ -103,16 +95,10 @@
   function normalizeSelection(spec,action,caps={}){
     if(action==='restore')return {...spec};
     const s={...spec,sampling:{...spec.sampling},loras:(spec.loras||[]).map(x=>({...x}))};
-    if(s.model_profile==='singularity'){
-      if(!s.checkpoint) s.checkpoint=preferredCheckpoint('singularity',caps)||SINGULARITY_V2;
-      if(action==='profile'&&s.mode!=='refs'){
-        s.mode='refs';
-      }
-    }
     if(action==='mode'&&s.mode!=='refs')s.preserve_reference_audio=null;
     let pika=s.loras.find(x=>x.enabled&&pikaVariant(x.name));
     if(action==='continuation'&&s.continuation){for(const l of s.loras)if(pikaVariant(l.name))l.enabled=false;pika=null;if(['turbo','turbo_ref'].includes(s.render_method)){s.render_method='native';s.steps=20;}s.enable_refine=false;s.refine=false;s.control={...s.control,enabled:false};}
-    if((action==='mode'||action==='profile')&&pika){
+    if(action==='mode'&&pika){
       const variant=pikaVariant(pika.name),family=s.mode==='refs'?'ref2va':'fl2va';
       if(variant.family!==family){const name=Object.keys(PIKA).find(n=>PIKA[n].steps===variant.steps&&PIKA[n].variant===variant.variant&&PIKA[n].family===family),other=s.loras.find(x=>x.name===name);pika.enabled=false;if(other){other.enabled=true;pika=other;}else pika=null;}
     }
@@ -126,10 +112,14 @@
     if(pika){
       const variant=pikaVariant(pika.name);if(!pikaProfileCompatible(s))s.model_profile='original';s.render_method='native';s.steps=variant.steps;
       s.sampling={...s.sampling,...pikaSampling(variant)};pika.strength=1;
-      for(const l of s.loras)if(l!==pika&&(pikaVariant(l.name)||/turbo|lightx2v/i.test(l.name)))l.enabled=false;
+      for(const l of s.loras)if(l!==pika&&!isSecondaryLoRA(l.name))l.enabled=false;
+    }
+    const singularityRefs = s.model_profile==='singularity'&&s.mode==='refs';
+    if(['turbo','turbo_ref'].includes(s.render_method)||(pika&&!singularityRefs)){
+      s.enable_refine=false;s.refine=false;
     }
     if(pika||['turbo','turbo_ref'].includes(s.render_method)){
-      s.enable_refine=false;s.refine=false;s.control={...s.control,enabled:false};s.audio_refinement={...s.audio_refinement,enabled:false};
+      s.control={...s.control,enabled:false};s.audio_refinement={...s.audio_refinement,enabled:false};
       if(!pika){for(const l of s.loras)l.enabled=false;s.steps=s.render_method==='turbo_ref'?8:s.steps>=4&&s.steps<=8?s.steps:6;}
     }else if(s.sampling.sampler_name==='h3_turbo')delete s.sampling.sampler_name;
     if(s.model_profile==='hybrid_loader')s.sampling.weight_dtype='default';
@@ -137,10 +127,12 @@
   }
   function selectionRestrictions(spec){
     const pika=(spec.loras||[]).some(x=>x.enabled&&pikaVariant(x.name));
-    const managed=pika||['turbo','turbo_ref'].includes(spec.render_method);
-    const single=managed?'This selected adapter/method requires a single generation pass.':'';
+    const turbo=['turbo','turbo_ref'].includes(spec.render_method);
+    const managed=pika||turbo;
+    const singularityRefs=spec.model_profile==='singularity'&&spec.mode==='refs';
+    const single=(turbo||(pika&&!singularityRefs))?'This selected adapter/method requires a single generation pass.':'';
     return {managed,sampling:managed,refine:single||(spec.control?.enabled?'Disable ControlNet before refinement.':spec.continuation?'Clear continuation before refinement.':''),
-      control:single||(spec.enable_refine||spec.refine?'Disable refinement before ControlNet.':spec.continuation?'Clear continuation before ControlNet.':spec.audio_refinement?.enabled?'Disable audio enhancement before ControlNet.':''),
+      control:(managed?'This selected adapter/method requires generation without ControlNet.':'')||(spec.enable_refine||spec.refine?'Disable refinement before ControlNet.':spec.continuation?'Clear continuation before ControlNet.':spec.audio_refinement?.enabled?'Disable audio enhancement before ControlNet.':''),
       audio:single||(spec.control?.enabled?'Disable ControlNet before audio enhancement.':spec.preserve_reference_audio?'Original reference soundtrack is preserved; generated-audio enhancement is bypassed.':''),
       pika:spec.continuation?'Clear continuation before selecting Pika.':'',turbo:spec.continuation?'Clear continuation before selecting Turbo.':''};
   }
@@ -148,23 +140,17 @@
     const active=(spec.loras||[]).filter(x=>x.enabled), selected=active.filter(x=>pikaVariant(x.name));
     if(!selected.length)return null;
     const lora=selected[0], variant=pikaVariant(lora.name);
-    const speedAdapters=active.filter(x=>pikaVariant(x.name)||/turbo|lightx2v/i.test(x.name));
-    if(speedAdapters.length!==1||Number(lora.strength??1)!==1)throw Error('Pika Flex requires exactly one speed adapter at strength 1.');
+    if(active.some(x=>x!==lora&&!isSecondaryLoRA(x.name))||Number(lora.strength??1)!==1)throw Error('Pika Flex requires one adapter at strength 1.');
     if(!pikaProfileCompatible(spec)||(spec.render_method||'native')!=='native'||variant.family!==(spec.mode==='refs'?'ref2va':'fl2va'))throw Error('Pika Flex requires Original or supported Singularity v2 References with the matching adapter.');
     if(Number(spec.steps)!==variant.steps)throw Error('Pika Flex requires '+variant.steps+' steps.');
-    if(spec.enable_refine||spec.refine||spec.control?.enabled||spec.continuation||spec.audio_refinement?.enabled)throw Error('Pika Flex requires a single pass without refinement, ControlNet or continuation.');
+    const singularityRefs=spec.model_profile==='singularity'&&spec.mode==='refs';
+    if(spec.control?.enabled||spec.continuation||spec.audio_refinement?.enabled||(!singularityRefs&&(spec.enable_refine||spec.refine)))throw Error('Pika Flex requires a single pass without refinement, ControlNet or continuation.');
     const required={sampler_name:'euler',scheduler:'simple',cfg:1,denoise:1,shift_video:variant.family==='ref2va'?12:6,shift_audio:3};
     for(const [key,value] of Object.entries(required))if(spec.sampling?.[key]!==value)throw Error('Pika Flex sampling disagrees: '+key);
     return variant;
   }
   function resolve(spec,caps={}){
     preservedReference(spec);
-    if(spec.facerefine?.enabled){
-      const fr=spec.facerefine;
-      if(fr.crop_factor!=null&&(Number(fr.crop_factor)<1.2||Number(fr.crop_factor)>8.0))throw Error('FaceRefine crop factor must be between 1.2 and 8.0.');
-      if(fr.base_denoise!=null&&(Number(fr.base_denoise)<0.05||Number(fr.base_denoise)>1.0))throw Error('FaceRefine denoise must be between 0.05 and 1.0.');
-      if(fr.feather!=null&&(Number(fr.feather)<2||Number(fr.feather)>128))throw Error('FaceRefine feather must be between 2 and 128.');
-    }
     const dials=spec.dials||[];
     if(!Array.isArray(dials))throw Error('Dials must be a list.');
     if(dials.filter(x=>x.enabled).length>12)throw Error('At most 12 Dials can be applied.');

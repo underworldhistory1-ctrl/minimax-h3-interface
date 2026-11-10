@@ -76,7 +76,7 @@ function selectedModelReady(mode=state.mode){
   if(state.modelProfile==='hybrid_loader'&&(!state.labCapabilities?.hybrid_loader_ready||state.hybridPreset&&state.hybridPreset!=='none'&&!state.modelsReady?.ref2va))return false;
   if(state.modelProfile==='singularity'){
     const target=selectedCheckpoint()||H3Configuration.SINGULARITY_V2;
-    return (state.labCapabilities?.model_catalog||[]).some(x=>x.name===target&&x.profiles.includes('singularity')) || target===H3Configuration.SINGULARITY_V2;
+    return (state.labCapabilities?.model_catalog||[]).some(x=>x.name===target&&x.profiles.includes('singularity'));
   }
   return (state.labCapabilities?.model_catalog||[]).some(x=>x.name===selectedCheckpoint()&&x.profiles.includes(state.modelProfile));
 }
@@ -187,7 +187,7 @@ function updateCapabilities(){
   refreshSelectionAvailability();
 }
 function preservedSoundtrack(){return state.preserveReferenceAudio?(state.preserveAudioSource||((state.refs||[]).filter(r=>r.kind==='video').length===1?state.refs.find(r=>r.kind==='video').alias:true)):null;}
-function selectionSpec(){return {mode:state.mode,model_profile:state.modelProfile||'original',checkpoint:state.checkpoint,render_method:method(),steps:Number($('steps').value),sampling:state.sampling,loras:state.loras,enable_refine:!!$('enableRefine')?.checked,facerefine:state.facerefine,control:state.control,continuation:state.continuation,audio_refinement:state.audioRefinement,preserve_reference_audio:preservedSoundtrack()};}
+function selectionSpec(){return {mode:state.mode,model_profile:state.modelProfile||'original',checkpoint:state.checkpoint,render_method:method(),steps:Number($('steps').value),sampling:state.sampling,loras:state.loras,enable_refine:!!$('enableRefine')?.checked,control:state.control,continuation:state.continuation,audio_refinement:state.audioRefinement,preserve_reference_audio:preservedSoundtrack()};}
 function applySelection(action,before=null){
   const previous={...selectionSpec(),loras:state.loras.map(l=>({...l}))};let next=H3Configuration.normalizeSelection(previous,action,state.labCapabilities||{});
   if(previous.loras.some(l=>l.enabled&&H3Configuration.pikaVariant(l.name))&&!next.loras.some(l=>l.enabled&&H3Configuration.pikaVariant(l.name))){next.sampling={...(state.pikaBefore?.sampling||H3Configuration.defaults)};if(!['turbo','turbo_ref'].includes(next.render_method))next.steps=state.pikaBefore?.steps>=8?state.pikaBefore.steps:20;delete state.pikaBefore;next=H3Configuration.normalizeSelection(next,action,state.labCapabilities||{});}
@@ -440,15 +440,13 @@ function applyAdapterSelection(item,enabled){
   const pika=H3Configuration.pikaVariant(item.name);
   if(item.enabled&&pika){
     if(!state.pikaBefore)state.pikaBefore={sampling:{...state.sampling},steps:Number($('steps').value)};
-    for(const other of state.loras)if(other!==item&&(H3Configuration.pikaVariant(other.name)||/turbo|lightx2v/i.test(other.name)))other.enabled=false;
+    for(const other of state.loras)if(other!==item&&!H3Configuration.isSecondaryLoRA(other.name))other.enabled=false;
     applySelection('pika',before);
   }else if(pika){restorePikaSampling();applySelection('lora',before);}
   else if(item.enabled){
     const hadPika=!!selectedPika();
-    if(!H3Configuration.isSecondaryLoRA(item.name)){
-      for(const other of state.loras)if(H3Configuration.pikaVariant(other.name))other.enabled=false;
-      if(hadPika)restorePikaSampling();
-    }
+    for(const other of state.loras)if(!H3Configuration.isSecondaryLoRA(item.name)&&H3Configuration.pikaVariant(other.name))other.enabled=false;
+    if(hadPika&&!H3Configuration.isSecondaryLoRA(item.name))restorePikaSampling();
     if(turboMethod())$('renderMethod').value='native';
     applySelection('lora',before);
   }else applySelection('lora',before);
@@ -464,8 +462,6 @@ function renderLoras() {
   renderMethodInfo();
   if(!count){const empty=document.createElement("div");empty.className="tip";empty.textContent="No LoRAs found in ComfyUI/models/loras.";list.append(empty);return;}
   creativeLoras.forEach(item=>{
-    const isPhysics = H3Configuration.isSpatialPhysics(item.name);
-    const isVbvr = H3Configuration.isVBVR(item.name);
     const swap=H3Configuration.isCharacterSwap(item.name);
     const anime=H3Configuration.isAnimeToRealism(item.name);
     const combat=/^H3_Combat_V2\.safetensors$/i.test(item.name);
@@ -503,11 +499,12 @@ async function loadLoras(){
     state.loras=names.map(name=>existing.get(name)||{name,enabled:false,strength:/Motion_Repair_V2/i.test(name)?.9:1});
     if(state.desiredLoras){state.loras=state.loras.map(x=>({...x,enabled:!!state.desiredLoras.find(l=>l.name===x.name),strength:state.desiredLoras.find(l=>l.name===x.name)?.strength??x.strength}));state.desiredLoras=null;}
     const managed=state.loras.find(item=>item.name===turboName);if(managed)managed.enabled=false;
-    if(selectedPika())$("steps").value=String(selectedPika().steps);
+    if(selectedPika()&&typeof $ === 'function')$("steps").value=String(selectedPika().steps);
     state.lorasLoaded=true;
     if(typeof syncRestoredAdapterStatus==='function')syncRestoredAdapterStatus();
     updateMethodAvailability();
     renderLoras();renderEstimates();
+    if(typeof window !== 'undefined' && window.H3ConfigurationUI)window.H3ConfigurationUI.refresh();
   }catch(error){
     state.lorasLoaded=false;
     $("loraList").textContent="LoRA list unavailable: "+error.message;
@@ -700,7 +697,7 @@ function renderRefs() {
     roleLabel.textContent="USE AS";
     const options=ref.kind==="image"?
       [["character identity","Character"],["custom","Custom — describe in prompt"],["storyboard","Storyboard · shot guide"],["spatial plan","Spatial plan · experimental"],["location","Location"],["visual style","Style"],["object","Object"]]:
-      ref.kind==="video"?[["motion","Motion"],["custom","Custom — describe in prompt"],["motion and camera","Performance + camera"],["camera movement","Camera"],["action","Action"],["whole scene","Whole scene · guided remake"]]:
+      ref.kind==="video"?[["motion","Motion"],["custom","Custom — describe in prompt"],["motion and camera","Performance + camera + timing"],["camera movement","Camera"],["action","Action"],["whole scene","Whole scene · guided remake"]]:
       [["voice","Voice"],["custom","Custom — describe in prompt"],["music","Music"],["sound effects","Effects"]];
     options.forEach(([value,label])=>{const o=document.createElement("option");o.value=value;o.textContent=label;role.append(o);});
     role.value=ref.role||options[0][0];

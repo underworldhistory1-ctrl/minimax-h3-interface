@@ -83,12 +83,44 @@ def patch_navigation(source):
             if sec_fetch_site == 'cross-site' and not safe_studio_navigation:""", 1)
 
 
+def patch_upscaler(source):
+    clamp = """        # Clamp target pixels to max supported resolution (1920x1088 landscape, 1088x1920 portrait)
+        # to prevent attention allocation OOM in diffusion models when latent is inflated beyond Full HD
+        max_w = 1920 if w_in >= h_in else 1088
+        max_h = 1088 if w_in >= h_in else 1920
+        if w_pixel_target > max_w or h_pixel_target > max_h:
+            shrink = min(max_w / w_pixel_target, max_h / h_pixel_target)
+            w_pixel_target = max(float(w_in * downsample), w_pixel_target * shrink)
+            h_pixel_target = max(float(h_in * downsample), h_pixel_target * shrink)
+            effective_scale = max(1.0, effective_scale * shrink)
+
+"""
+    anchor = '        # 2. Pixel-space alignment'
+    if '# Clamp target pixels to max supported resolution' not in source and anchor in source:
+        source = source.replace(anchor, clamp + anchor, 1)
+    old = '        if w_out == w_in and h_out == h_in:\n            return io.NodeOutput(latent)'
+    new = """        if w_out == w_in and h_out == h_in:
+            if dev.type == "cuda":
+                if HAS_COMFY_MM:
+                    mm.soft_empty_cache()
+                else:
+                    torch.cuda.empty_cache()
+                gc.collect()
+            return io.NodeOutput(latent)"""
+    return source.replace(old, new, 1)
+
+
 def apply_patches(root):
     root = Path(root)
     specs = [(root/'comfy/ldm/minimax/model.py', patch_model), (root/'server.py', patch_navigation)]
     cache = root/'custom_nodes/ComfyUI-MiniMax-H3-MotionCache/motion_cache.py'
     if cache.exists():
         specs.append((cache, patch_cache))
+    custom_nodes = root / 'custom_nodes'
+    if custom_nodes.exists():
+        for upscaler in custom_nodes.glob('**/minimax_h3_latent_upscaler_3d.py'):
+            if upscaler.is_file():
+                specs.append((upscaler, patch_upscaler))
     plan = []
     for path, transform in specs:
         original = path.read_text(encoding='utf-8')

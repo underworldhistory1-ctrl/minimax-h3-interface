@@ -169,6 +169,22 @@ def process_candidates(*, fail_on_unresolved=False, platform=None):
     return found
 
 
+def repair_runtime_directories(root):
+    """Recover only missing ephemeral H3 media targets on a retained disk."""
+    root = Path(root)
+    for name in ('input', 'output', 'temp'):
+        path = root / name
+        if not path.is_symlink() or path.exists():
+            continue
+        target = path.readlink()
+        if target != Path('/opt/studio-runtime/h3') / name:
+            raise RuntimeError('Missing media directory target; preserve and repair explicitly: ' + str(path))
+        persistent = root / '.h3-media' / name
+        persistent.mkdir(parents=True, exist_ok=True)
+        path.unlink()  # The checked dangling link, never its target or media.
+        path.symlink_to(persistent, target_is_directory=True)
+
+
 def discover_comfy(raw=None, candidates=None):
     if raw:
         root = Path(raw).expanduser().resolve()
@@ -959,6 +975,7 @@ def _main():
                     raise RuntimeError("Saved smoke job: " + result.get("status", "unknown") + "; it was not cancelled or resubmitted")
                 state["gpu_validated"] = True
             stage("wait_for_idle", lambda: wait_for_install_idle(api, args.queue_timeout))
+            stage("media_directories", lambda: repair_runtime_directories(root))
             stage("protect_user_edits", lambda: protect_runtime_edits(root))
             # Runtime repairs are idempotent; snapshot once per source/config instead of every retry.
             if not state.get("snapshot"):

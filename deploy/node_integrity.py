@@ -19,6 +19,15 @@ def assert_node_integrity(path, git="git", allow_runtime_patch=True):
             target = path / name
             if not target.is_symlink() and target.is_file() and target.read_text(encoding="utf-8") == patch_cache(original):
                 continue
+        if allow_runtime_patch and path.name == "Comfyui_Minimax_h3_latent_Upscaler" and name == "nodes/minimax_h3_latent_upscaler_3d.py":
+            try:
+                from .runtime_patches import patch_upscaler
+            except ImportError:
+                from runtime_patches import patch_upscaler
+            original = read("show", "HEAD:" + name).decode("utf-8").replace("\r\n", "\n")
+            target = path / name
+            if not target.is_symlink() and target.is_file() and target.read_text(encoding="utf-8") == patch_upscaler(original):
+                continue
         raise RuntimeError("Optional node has local edits; preserving them: " + str(path / name))
     # New executable files can change package imports without changing HEAD.
     for name in filter(None, read("ls-files", "--others", "-z").decode("utf-8").split("\0")):

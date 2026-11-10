@@ -74,3 +74,7 @@ After the final image KSampler, graph-builder allocates H3StudioAudioRefineMask 
 ## Connected input and output checks
 
 Server admission compares temporal-guide frame indices (including continuation offsets), guide media kinds/latent and VAE links, reference-detail selection, fps and the required Full HD crop/refinement resize chain with declared settings. Saved image generation and prompt preview carry the same auto-fit intent as local uploads; derived resized files preserve originals.
+
+## Reference timeline and optional integration corrections
+
+Delayed video soundtracks are normalized with leading silence before native loading, including 24-fps sources. Performance + camera includes action timing; it remains semantic reference guidance. LoRA loader chains preserve declared order, including separate refinement chains. FaceRefine is explicitly unavailable until its installer, persistence and validation integration are complete. Shared-GPU admission requires explicit environment configuration. Known dangling ephemeral media symlinks are repaired onto retained storage only after the queue is idle. Existing valid paths and media are preserved.

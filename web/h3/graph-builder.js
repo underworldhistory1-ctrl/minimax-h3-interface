@@ -109,7 +109,7 @@
     const refinement={steps:10,denoise:.4,cfg:1,sampler_name:'res_multistep',scheduler:'simple',...renderSpec.refinement};
     if(enableRefine){
       if(!Number.isInteger(refinement.steps)||refinement.steps<1||refinement.steps>100||!Number.isFinite(refinement.denoise)||refinement.denoise<0||refinement.denoise>1||!Number.isFinite(refinement.cfg)||refinement.cfg<0||refinement.cfg>100)throw Error('Invalid refinement sampling settings.');
-      Configuration.resolve({...renderSpec,sampling:{...renderSpec.sampling,sampler_name:refinement.sampler_name,scheduler:refinement.scheduler}},capabilities);
+      Configuration.resolve({...renderSpec,loras:[],sampling:{...renderSpec.sampling,sampler_name:refinement.sampler_name,scheduler:refinement.scheduler}},capabilities);
     }
 
     const g = {
@@ -166,11 +166,7 @@
 
     // LoRA chain
     let modelLink = ["1", 0];
-    const loras = (renderSpec.loras || []).filter(l => l.enabled).slice().sort((a, b) => {
-      const aPika = Configuration.pikaVariant(a.name) ? 0 : 1;
-      const bPika = Configuration.pikaVariant(b.name) ? 0 : 1;
-      return aPika - bPika;
-    });
+    const loras = (renderSpec.loras || []).filter(l => l.enabled);
     loras.forEach((lora, idx) => {
       if (!lora.name || !Number.isFinite(Number(lora.strength ?? 1)) || !Number.isFinite(Number(lora.refinement_strength ?? 1))) throw new Error('Invalid LoRA name or strength.');
       const loraId = allocate(50);
@@ -462,7 +458,7 @@
       if(!capabilities.audio_refine_ready)throw Error('Update H3 Studio runtime before enabling audio enhancement.');
       const options={steps:6,denoise:.5,sampler_name:'euler',scheduler:'simple',...audioRefine};
       if(!Number.isInteger(options.steps)||options.steps<1||options.steps>20||!Number.isFinite(options.denoise)||options.denoise<.01||options.denoise>1)throw Error('Invalid audio enhancement settings.');
-      Configuration.resolve({...renderSpec,sampling:{...renderSpec.sampling,sampler_name:options.sampler_name,scheduler:options.scheduler}},capabilities);
+      Configuration.resolve({...renderSpec,loras:[],sampling:{...renderSpec.sampling,sampler_name:options.sampler_name,scheduler:options.scheduler}},capabilities);
       const source=g['13'].inputs.samples,preserve=renderSpec.continuation?Number(renderSpec.continuation.context_length||39):0;
       const maskId=allocate(180),samplerId=allocate(181),restoreId=allocate(182);
       g[maskId]={class_type:'H3StudioAudioRefineMask',inputs:{latent:source,preserve_frames:preserve}};
@@ -485,171 +481,8 @@
       g['11'].inputs.images = [cropId,0];
     }
     if (renderSpec.facerefine?.enabled) {
-      const fr = renderSpec.facerefine;
-      const frAlloc = p => allocate(p);
-      const detector = fr.detector || 'face_yolov8m.pt';
-      const cropFactor = Number(fr.crop_factor ?? 2.5);
-      const smoothWindow = Number(fr.smooth_window ?? 21);
-      const baseDenoise = Number(fr.base_denoise ?? 0.40);
-      const feather = Number(fr.feather ?? 6);
-      const colorMatch = Number(fr.color_match ?? 1.0);
-      const canvasMode = fr.canvas_mode || 'auto_capped_768';
-      const canvasWidth = Number(fr.canvas_width ?? 768);
-      const canvasHeight = Number(fr.canvas_height ?? 768);
-      const identityModel = fr.identity_model || (firstRefImageLink ? 'clip_vision' : 'largest_face');
-
-      // 1. Face Track and Crop
-      const trackCropId = frAlloc(220);
-      const trackCropInputs = {
-        images: g['11'].inputs.images,
-        detector: detector,
-        confidence: Number(fr.confidence ?? 0.35),
-        crop_factor: cropFactor,
-        canvas_width: canvasWidth,
-        canvas_height: canvasHeight,
-        canvas_mode: canvasMode,
-        smooth_window: smoothWindow,
-        size_smooth_window: Number(fr.size_smooth_window ?? 51),
-        smooth_method: fr.smooth_method || 'gaussian',
-        size_mode: fr.size_mode || 'per_frame',
-        select: fr.select || (firstRefImageLink ? 'identity_reference' : 'largest_face'),
-        identity_model: identityModel === 'clip_vision' ? 'clip_vision' : 'insightface',
-        identity_threshold: Number(fr.identity_threshold ?? (identityModel === 'clip_vision' ? 0.80 : 0.28)),
-        cut_detection: fr.cut_detection || 'none',
-        cut_threshold: Number(fr.cut_threshold ?? 3.0)
-      };
-
-      if (identityModel === 'clip_vision') {
-        const clipVisionId = frAlloc(221);
-        g[clipVisionId] = {
-          class_type: 'CLIPVisionLoader',
-          inputs: { clip_name: fr.clip_vision_model || 'sigclip_vision_patch14_384.safetensors' }
-        };
-        trackCropInputs.identity_clip_vision = [clipVisionId, 0];
-        if (firstRefImageLink) {
-          trackCropInputs.identity_reference = firstRefImageLink;
-        }
-      }
-
-      g[trackCropId] = {
-        class_type: 'H3FaceTrackCrop',
-        inputs: trackCropInputs
-      };
-
-      // 2. Face Conditioning + Empty AV Latent
-      const faceCondId = frAlloc(222);
-      const faceCondInputs = {
-        clip: ['3', 0],
-        vae: ['4', 0],
-        audio_vae: ['5', 0],
-        prompt: fr.prompt || prompt || '',
-        width: canvasWidth,
-        height: canvasHeight,
-        length: length
-      };
-      if (isRefs && firstRefImageLink) {
-        faceCondInputs['ref_images.ref_image_0'] = firstRefImageLink;
-        faceCondInputs.ref_image_size = renderSpec.ref_image_size || 'match';
-      }
-      g[faceCondId] = {
-        class_type: isRefs ? 'MiniMaxH3ReferenceToVideo' : 'MiniMaxH3ImageToVideo',
-        inputs: faceCondInputs
-      };
-
-      // 3. Inject Video Latent (crops into video stream)
-      const injectId = frAlloc(223);
-      g[injectId] = {
-        class_type: 'H3InjectVideoLatent',
-        inputs: {
-          av_latent: [faceCondId, 1],
-          images: [trackCropId, 0],
-          vae: ['4', 0]
-        }
-      };
-
-      // 4. Native Audio Lock (preserves audio stream, enables lipsync)
-      const audioLockId = frAlloc(224);
-      g[audioLockId] = {
-        class_type: 'MiniMaxH3NativeAudioLock',
-        inputs: {
-          model: g['8'].inputs.model,
-          av_latent: [injectId, 0],
-          audio_vae: ['5', 0],
-          audio: g['11'].inputs.audio || ['10', 0]
-        }
-      };
-
-      // 5. Per-Frame Denoise (applies sigma schedule from transform_info)
-      const perFrameDenoiseId = frAlloc(225);
-      g[perFrameDenoiseId] = {
-        class_type: 'H3PerFrameDenoise',
-        inputs: {
-          model: [audioLockId, 0],
-          av_latent: [audioLockId, 1],
-          transform: [trackCropId, 1],
-          denoise_multiplier_small_face: Number(fr.denoise_multiplier_small_face ?? 1.0),
-          denoise_multiplier_large_face: Number(fr.denoise_multiplier_large_face ?? 0.35),
-          scale_mode: fr.scale_mode || 'absolute_px',
-          face_px_small: Number(fr.face_px_small ?? 30.0),
-          face_px_large: Number(fr.face_px_large ?? 120.0),
-          gamma: Number(fr.gamma ?? 1.0),
-          smooth_frames: Number(fr.smooth_frames ?? 9)
-        }
-      };
-
-      // 6. Face Sampling
-      const faceSamplerId = frAlloc(226);
-      const isPika = (renderSpec.loras || []).some(l => l.enabled && Configuration.pikaVariant(l.name));
-      g[faceSamplerId] = {
-        class_type: 'KSampler',
-        inputs: {
-          model: [perFrameDenoiseId, 2],
-          seed: RenderValues.nextSeed(seed),
-          steps: Number(fr.steps ?? (isPika ? 8 : 10)),
-          cfg: Number(fr.cfg ?? 1.0),
-          sampler_name: fr.sampler_name || (isPika ? 'euler' : 'res_multistep'),
-          scheduler: fr.scheduler || 'simple',
-          positive: [faceCondId, 0],
-          negative: g['8'].inputs.negative,
-          latent_image: [perFrameDenoiseId, 0],
-          denoise: baseDenoise
-        }
-      };
-
-      // 7. Decode refined crops
-      const faceDecodeId = frAlloc(227);
-      g[faceDecodeId] = {
-        class_type: 'VAEDecode',
-        inputs: {
-          samples: [faceSamplerId, 0],
-          vae: ['4', 0]
-        }
-      };
-
-      // 8. Stitch refined crops back into original video
-      const stitchId = frAlloc(228);
-      g[stitchId] = {
-        class_type: 'H3FaceStitch',
-        inputs: {
-          base_images: g['11'].inputs.images,
-          refined_crops: [faceDecodeId, 0],
-          transform: [trackCropId, 1],
-          paste_region: fr.paste_region || 'face_only',
-          mask_dilation: Number(fr.mask_dilation ?? 16),
-          feather: feather,
-          colour_match: colorMatch,
-          blend: Number(fr.blend ?? 1.0),
-          undetected_frames: fr.undetected_frames || 'fade_out'
-        }
-      };
-
-      // 9. Route final stitched images and locked audio to H3SaveVideo
-      g['11'].inputs.images = [stitchId, 0];
-      if (g[audioLockId]) {
-        g['11'].inputs.audio = [audioLockId, 2];
-      }
+      throw new Error('FaceRefine is not integrated with saved render validation yet. Disable this experimental pass.');
     }
-
     for(const node of Object.values(g))if(['SpectrumApplyMiniMaxH3','MiniMaxH3MotionCache'].includes(node.class_type))Configuration.patchOptions(node,renderSpec.node_options?.[node.class_type],capabilities);
     return g;
   }

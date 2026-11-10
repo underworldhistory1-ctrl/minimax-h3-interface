@@ -171,7 +171,7 @@ def validate_pika(spec):
     if not nodes and not selected:
         return False
     speed_active = [l for l in active if l.get('name') in PIKA or any(x in l.get('name', '').lower() for x in ('turbo', 'lightx2v'))]
-    if len(nodes) != 1 or len(selected) != 1 or len(speed_active) != 1 or 'model_profile' not in spec:
+    if len(nodes) not in ((1, 2) if (spec.get('enable_refine') or spec.get('refine')) else (1,)) or len(selected) != 1 or len(speed_active) != 1 or 'model_profile' not in spec:
         raise ValueError('Pika Flex requires one explicit adapter and configuration contract')
     key, node = nodes[0]; lora = selected[0]; name = lora['name']; steps, family = PIKA[name]
     supported_profile = spec['model_profile'] == 'original' or (spec['model_profile'] == 'singularity' and spec.get('mode') == 'refs' and str(spec.get('checkpoint', '')).replace('\\', '/').rsplit('/', 1)[-1] == 'Minimax-h3_Singularity_ref2va_v2_pruned_int8.safetensors')
@@ -179,10 +179,29 @@ def validate_pika(spec):
         raise ValueError('Pika Flex requires Original or supported Singularity v2 References and its matching transformer')
     if lora.get('strength', 1) != 1 or node.get('class_type') != 'LoraLoaderModelOnly' or node.get('inputs', {}).get('lora_name') != name or node.get('inputs', {}).get('strength_model') != 1:
         raise ValueError('Pika Flex adapter wiring or strength disagrees')
-    if any(spec.get(k) for k in ('enable_refine', 'refine', 'continuation')) or (spec.get('control') or {}).get('enabled') or (spec.get('audio_refinement') or {}).get('enabled'):
+    if any(spec.get(k) for k in ('continuation',)) or (spec.get('control') or {}).get('enabled') or (spec.get('audio_refinement') or {}).get('enabled'):
+        raise ValueError('Pika Flex requires a pass without additional control/continuation')
+    if any(n.get('class_type') != 'LoraLoaderModelOnly' or n.get('inputs', {}).get('lora_name') != name or n.get('inputs', {}).get('strength_model') != 1 for _, n in nodes):
+        raise ValueError('Pika Flex refinement adapter disagrees')
+    chain_count = sum(n.get('class_type') == 'LoraLoaderModelOnly' for n in graph.values())
+    if chain_count not in ((len(active), 2 * len(active)) if (spec.get('enable_refine') or spec.get('refine')) else (len(active),)):
+        raise ValueError('Pika Flex requires approved adapters')
+    singularity_refs = spec.get('model_profile') == 'singularity' and spec.get('mode') == 'refs'
+    enable_refine = bool(spec.get('enable_refine') or spec.get('refine'))
+    if enable_refine and not singularity_refs:
         raise ValueError('Pika Flex requires a single pass without additional processing')
-    if sum(n.get('class_type') == 'LoraLoaderModelOnly' for n in graph.values()) != len(active) or (not spec.get('facerefine') and sum('sampler' in n.get('class_type', '').lower() for n in graph.values()) != 1):
-        raise ValueError('Pika Flex requires approved adapters and single sampler')
+    facerefine_enabled = bool((spec.get('facerefine') or {}).get('enabled'))
+    if not (enable_refine or facerefine_enabled):
+        if sum('sampler' in n.get('class_type', '').lower() for n in graph.values()) != 1:
+            raise ValueError('Pika Flex requires approved adapters and single sampler')
+        if graph.get('13', {}).get('inputs', {}).get('samples') != ['8', 0]:
+            raise ValueError('Pika Flex decode must follow the approved single sampler')
+    elif enable_refine:
+        refine_samplers = [k for k, n in graph.items() if 'sampler' in n.get('class_type', '').lower() and k != '8']
+        if not refine_samplers:
+            raise ValueError('Pika Flex with refinement requires refinement sampler')
+        if graph.get('13', {}).get('inputs', {}).get('samples')[0] not in refine_samplers:
+            raise ValueError('Pika Flex decode must follow the approved refinement sampler')
     
     # Trace model link backwards through any chained secondary LoRAs to ensure Pika is the foundation
     curr_link = _before_dials(graph, graph.get('2', {}).get('inputs', {}).get('model'))
@@ -196,8 +215,8 @@ def validate_pika(spec):
             break
     if curr_link != [key, 0]:
         raise ValueError('Pika Flex model path disagrees')
-    if graph.get('13', {}).get('inputs', {}).get('samples') != ['8', 0] or any(graph.get(key, {}).get('inputs', {}).get('samples') != ['13', 0] for key in ('9', '10')):
-        raise ValueError('Pika Flex decode must follow the approved single sampler')
+    if any(graph.get(k, {}).get('inputs', {}).get('samples') != ['13', 0] for k in ('9', '10')):
+        raise ValueError('Pika Flex decode must feed output nodes 9 and 10')
     required = {'sampler_name': 'euler', 'scheduler': 'simple', 'cfg': 1, 'denoise': 1, 'shift_video': 12 if family == 'ref2va' else 6, 'shift_audio': 3}
     if spec.get('steps') != steps or graph.get('8', {}).get('inputs', {}).get('steps') != steps:
         raise ValueError('Pika Flex requires the matching 2, 4 or 8 step count')
@@ -421,6 +440,8 @@ def _validate_execution_path(spec, graph, audio_sampler, capabilities):
 
 
 def validate_configuration(spec, capabilities):
+    if (spec.get('facerefine') or {}).get('enabled'):
+        raise ValueError('FaceRefine integration is unavailable')
     graph=spec.get('workflow',{})
     if not isinstance(graph,dict) or any(not isinstance(n,dict) or not isinstance(n.get('inputs',{}),dict) for n in graph.values()):raise ValueError('Workflow nodes require object inputs')
     for value in spec.get('workflow',{}).values():

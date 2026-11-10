@@ -62,31 +62,12 @@ def check_capabilities(folder_paths_module=None, nodes_module=None) -> dict:
     facerefine_ready = all(name in registered_nodes for name in facerefine_nodes)
     facerefine_detectors = []
     clip_vision_models = []
-    if folder_paths_module:
-        base_models = getattr(folder_paths_module, "models_dir", None)
-        if base_models and hasattr(folder_paths_module, "add_model_folder_path"):
-            u_dir = os.path.join(base_models, "ultralytics")
-            if os.path.isdir(u_dir):
-                folder_paths_module.add_model_folder_path("ultralytics", u_dir)
-                bbox_dir = os.path.join(u_dir, "bbox")
-                if os.path.isdir(bbox_dir):
-                    folder_paths_module.add_model_folder_path("ultralytics_bbox", bbox_dir)
-                segm_dir = os.path.join(u_dir, "segm")
-                if os.path.isdir(segm_dir):
-                    folder_paths_module.add_model_folder_path("ultralytics_segm", segm_dir)
-        if hasattr(folder_paths_module, "get_filename_list"):
-            for sub in ("ultralytics_bbox", "ultralytics"):
-                try:
-                    facerefine_detectors.extend(folder_paths_module.get_filename_list(sub))
-                except Exception:
-                    pass
-        if base_models:
-            for sub in ("ultralytics/bbox", "ultralytics", "ultralytics/segm"):
-                d = os.path.join(base_models, *sub.split("/"))
-                if os.path.isdir(d):
-                    for f in os.listdir(d):
-                        if f.endswith(".pt") and f not in facerefine_detectors:
-                            facerefine_detectors.append(f)
+    if folder_paths_module and hasattr(folder_paths_module, "get_filename_list"):
+        for sub in ("ultralytics_bbox", "ultralytics"):
+            try:
+                facerefine_detectors.extend(folder_paths_module.get_filename_list(sub))
+            except Exception:
+                pass
         try:
             clip_vision_models.extend(folder_paths_module.get_filename_list("clip_vision"))
         except Exception:
@@ -178,11 +159,41 @@ def check_capabilities(folder_paths_module=None, nodes_module=None) -> dict:
         if not ok:
             missing_reasons.append(f"Required model '{name}' is missing or incomplete.")
 
+    # 5. Shared GPU Mutual Exclusion Check (LTX Studio)
+    ltx_busy = False
+    lock_file = "/tmp/studio-shared-gpu.lock"
+    try:
+        import fcntl
+        if os.path.exists(lock_file):
+            fd = os.open(lock_file, os.O_RDWR)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(fd, fcntl.LOCK_UN)
+            except BlockingIOError:
+                ltx_busy = True
+            finally:
+                os.close(fd)
+    except Exception:
+        pass
+
+    if not ltx_busy:
+        try:
+            import json, urllib.request
+            req = urllib.request.Request("http://127.0.0.1:7860/api/status", headers={"User-Agent": "H3Capabilities"})
+            with urllib.request.urlopen(req, timeout=1) as resp:
+                data = json.load(resp)
+                if isinstance(data, dict) and (data.get("active_job") or data.get("queue_length", 0) > 0):
+                    ltx_busy = True
+        except Exception:
+            pass
+
     from .control_preprocess import preprocessor_status
     preprocessors = preprocessor_status()
     from .runtime_attention import runtime_attention
     return {"turbo_ready": turbo_ready, "turbo_ref_ready": turbo_ref_ready,
         **discovered,
+        "inference_enabled": not ltx_busy,
+        "reason": "LTX Studio is rendering. H3 generation is paused." if ltx_busy else None,
         'audio_refine_ready': all(name in registered_nodes for name in ('H3StudioAudioRefineMask', 'H3StudioAudioRestoreVideo')),
         "server_attention": runtime_attention(),
         "controlnet_references_ready": not control_missing and reference_control_supported(),

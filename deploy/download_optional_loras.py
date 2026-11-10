@@ -65,6 +65,18 @@ LORAS = (
         "5b3edb09e9d6029439badf9bc9db4ba4a355ae679b0810888de82c4793c0bac8",
         155110280,
     ),
+    (
+        "wushu_spatial_physics_clean_3000_pruned.safetensors",
+        "https://huggingface.co/Jojocodex/minimax-h3-spatial-physics-lora/resolve/main/wushu_spatial_physics_clean_3000_pruned.safetensors",
+        "7d14f3701560068e7004159c8b2a7278bd2dbfc9e5e3b60d0bc9aef6c049919d",
+        155109672,
+    ),
+    (
+        "H3-Licon-VBVR-I2V.safetensors",
+        "https://huggingface.co/LiconStudio/Minimax-H3-VBVR/resolve/main/H3-Licon-VBVR-I2V.safetensors",
+        "19ba9d18c06eaecebd11c1ca1d27a0277f414d43370124e3cfcb33a113e9f886",
+        149238584,
+    ),
 )
 
 

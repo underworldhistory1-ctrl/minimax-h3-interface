@@ -57,7 +57,7 @@
   const frPanel = document.createElement('details');
   frPanel.id = 'faceRefinePanel';
   frPanel.innerHTML = '<summary>H3 FaceRefine · Per-frame Face Restoration</summary>'
-    + '<div class="tip">Detects and crops faces per-frame, injects into H3 AV latent with native audio lipsync lock, applies per-frame denoise scheduling, and seamlessly stitches back with feathered boundary blending. Supports stylized/painterly 3D characters via CLIP Vision.</div>'
+    + '<div class="tip">Unavailable experimental integration. FaceRefine is disabled until its installer, saved settings and render validation are connected.</div>'
     + '<div style="margin-top:10px">'
       + '<label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input id="faceRefineEnable" type="checkbox" style="width:auto"> <strong>Enable H3 FaceRefine</strong></label>'
       + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">'
@@ -70,6 +70,7 @@
       + '</div>'
     + '</div>';
   panel.append(frPanel);
+  document.querySelector('.model-hero').after(panel);H3Guidance.apply(panel);
   $('spatialPhysicsEnable').onchange = () => {
     let pLoRA = state.loras.find(l=>H3Configuration.isSpatialPhysics(l.name));
     if(!pLoRA) {
@@ -160,11 +161,13 @@
   }
 
   function refreshFaceRefineControls(){
+    $('faceRefineEnable').disabled = true;
+    $('faceRefineEnable').title = 'Unavailable: this experimental pass is not integrated with saved render validation.';
     state.facerefine = state.facerefine || {};
     const fr = state.facerefine;
     if($('faceRefineEnable')){
       $('faceRefineEnable').checked = !!fr.enabled;
-      $('faceRefineEnable').disabled = state.busy || state.projectLoading;
+      $('faceRefineEnable').disabled = true;
       if(fr.crop_factor!=null) {
         $('faceRefineCropFactor').value = fr.crop_factor;
         $('faceRefineCropVal').textContent = Number(fr.crop_factor).toFixed(1);
@@ -181,7 +184,6 @@
     }
   }
 
-  document.querySelector('.model-hero').after(panel);H3Guidance.apply(panel);
   $('prepareSwap').onclick=()=>{
     if(state.busy)return;
     const videos=state.refs.filter(r=>r.kind==='video'),images=state.refs.filter(r=>r.kind==='image');
@@ -210,7 +212,7 @@
       }
       const pikaRef=state.loras.find(l=>l.name==='pika_h3_flex_turbo_8step_hd_ref2va.safetensors');
       if(pikaRef&&!state.loras.some(l=>l.enabled&&H3Configuration.pikaVariant(l.name))){
-        pikaRef.enabled=true;pikaRef.strength=1;
+        applyAdapterSelection(pikaRef,true);
       }
     }else{
       state.checkpoint=H3Configuration.preferredCheckpoint(profile,state.labCapabilities||{});
@@ -272,10 +274,12 @@
   }
   async function refresh(){
     await schemas();
-    const caps=state.labCapabilities||{},profile=state.modelProfile||'original';
+    const caps=state.labCapabilities||{},profile=state.modelProfile||'singularity';
+    state.modelProfile=profile;
     renderLoras();
     refreshPhysicsControls();
     refreshFaceRefineControls();
+    refreshPikaControls();
     $('modelProfile').value=profile;document.body.dataset.modelAccent=H3Configuration.profiles[profile]?.accent||'original';
     document.querySelector('.model-hero h1').textContent=profile==='original'?'MiniMax H3':H3Configuration.profiles[profile]?.label||'MiniMax H3';
     document.querySelector('.model-hero .eyebrow').textContent=profile==='original'?'MODEL · H3 BASE':'MODEL · COMMUNITY CHECKPOINT';
@@ -292,7 +296,7 @@
     if(profile!=='original'&&state.checkpoint&&!names.includes(state.checkpoint))names.unshift(state.checkpoint);
     for(const name of names){
       const o=document.createElement('option');o.value=name;o.textContent=name;
-      o.disabled=profile!=='original'&&!(caps.model_catalog||[]).some(x=>x.name===name)&&name!==H3Configuration.SINGULARITY_V2;
+      o.disabled=profile!=='original'&&!(caps.model_catalog||[]).some(x=>x.name===name);
       select.append(o);
     }
     if(names.length&&(profile==='original'||!state.checkpoint))state.checkpoint=profile==='original'?names[0]:H3Configuration.preferredCheckpoint(profile,caps);select.value=state.checkpoint||'';

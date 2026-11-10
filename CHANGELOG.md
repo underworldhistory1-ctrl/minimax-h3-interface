@@ -2,10 +2,21 @@
 
 ## Unreleased
 
+- Preserve delayed reference-audio timelines during upload, including already-24-fps video.
+- Keep LoRA declaration and loader order consistent; gate missing Singularity checkpoints and retain shared-GPU admission as opt-in.
+- Clarify that Performance + camera includes action timing.
+
+- Integrate optional Spatial & Physics LoRA (`wushu_spatial_physics_clean_3000_pruned.safetensors`) and Licon VBVR LoRA (`H3-Licon-VBVR-I2V.safetensors`) with dedicated UI controls, strength sliders and multi-adapter stacking support.
+- Keep incomplete FaceRefine integration disabled explicitly rather than exposing a checkbox that does not affect generation.
+- Fix Model Configuration panel mounting order, preventing premature listener attachment before DOM insertion.
+- Fix Singularity v2 checkpoint persistence across mode changes and page reloads.
+- Unlock Generative Latent Refinement (10 steps, 0.4 denoise, res_multistep) for Singularity v2 + Pika Flex Turbo 8-step HD Ref2VA workflows.
+- Bound runtime latent-upscaler targets to the supported Full HD ceiling and recognize the exact managed patch during subsequent installs. This is not a guarantee against GPU memory exhaustion.
+- Add pinned model hashes, launcher models entries, and automated verification suite in `tests/test_h3_integrations.py`.
 - Add a dedicated installed Pika Flex Turbo selector with mode-aware variants, accurate active sampling summaries and visible selection-change notices.
 - Preserve compatible Pika adapters when switching into the installed Singularity v2 checkpoint; retain explicitly restored checkpoint choices.
 - Surface compiled-prompt length guidance and native reference-role bypass warnings without truncation.
-- Verify 339 JavaScript tests, 21 focused Python tests and live browser selection transitions. Existing Pika outputs were decoded; a new Singularity v2 + Turbo GPU render remains unverified. See [dated audit](docs/PIKA_AUDIT_2026_11_05.md).
+- Focused correction checks: 12 Python and 11 JavaScript tests passed; no additional GPU renders were run for this source promotion.
 
 ## 2.15.0 - 2026-11-04
 

@@ -24,6 +24,18 @@
       "repository": "https://github.com/matlowai/ComfyUI-Dials.git",
       "commit": "7dd0b7e3513eb60915833eecfc6e547f3976762f",
       "status": "source_audited_gpu_untested"
+    },
+    "facerefine": {
+      "directory": "ComfyUI-H3-FaceRefine",
+      "repository": "https://github.com/Carasibana/ComfyUI-H3-FaceRefine.git",
+      "commit": "c4794e240212fefc2cbbe461fbf5be3c0ee0a221",
+      "status": "source_audited_cpu_graph_verified"
+    },
+    "audio_lock": {
+      "directory": "ComfyUI-H3-NativeAudioLock",
+      "repository": "https://github.com/SveSop/ComfyUI-H3-NativeAudioLock.git",
+      "commit": "9bc3aeecb4ff025b642646d2cb136cb65fbf4109",
+      "status": "source_audited_cpu_graph_verified"
     }
   },
   "optional_checkpoints": {
