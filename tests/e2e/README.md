@@ -26,3 +26,6 @@ Image cancellation removes only the identified pending queue entry and verifies 
 `selection-audit-browser.cjs` checks explicit soundtrack selection, duplicate/reordered sources, project persistence, canonical submission metadata, malformed frame requests, inactive trim handling and Qwen metadata retry/unlock against the real local routes with simulated inference.
 
 `project-settings-browser.cjs` verifies mandatory element names, filename collision isolation, visible actions, catalog removal persistence, empty-input fresh tabs with latest generation controls, reload retention, cross-project isolation and real server storage.
+
+
+GitHub Actions runs the ten self-contained journeys plus connected controls with pinned Playwright 1.65.0. For the connected journey, start `python scripts/studio_preview.py --port 18772` first, run `node tests/e2e/connected-browser-acceptance.cjs`, then stop the localhost fixture. Inference is simulated.

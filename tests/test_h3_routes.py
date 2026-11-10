@@ -40,10 +40,24 @@ class TestH3LabRoutes(AioHTTPTestCase):
             return {'prompt_id':'prompt-'+str(len(self.queue.submissions))}
         self.queue.submit_prompt=submit
         first=asyncio.create_task(self.client.post('/h3_studio/lab/jobs',json={'request_id':'parallel-first','render_spec':{}}))
-        await asyncio.wait_for(entered.wait(),1)
-        second=asyncio.create_task(self.client.post('/h3_studio/lab/jobs',json={'request_id':'parallel-second','render_spec':{}}))
-        await asyncio.sleep(.05);release.set()
-        responses=await asyncio.gather(first,second)
+        tasks=[first]
+        try:
+            # Initial storage/CPU capability discovery can exceed one second on
+            # Windows runners. Synchronize on admission, not machine speed.
+            await asyncio.wait_for(entered.wait(),10)
+            second=asyncio.create_task(self.client.post('/h3_studio/lab/jobs',json={'request_id':'parallel-second','render_spec':{}}))
+            tasks.append(second)
+            await asyncio.sleep(.05)
+            self.assertFalse(second.done())
+            release.set()
+            responses=await asyncio.wait_for(asyncio.gather(*tasks),10)
+        finally:
+            release.set()
+            # Drain requests before fixture storage is removed, even on failure.
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks,return_exceptions=True)
         self.assertEqual([r.status for r in responses],[201,201])
         self.assertEqual(len(self.queue.submissions),2)
 

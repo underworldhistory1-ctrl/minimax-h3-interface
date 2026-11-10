@@ -1,6 +1,7 @@
 import importlib.util
 import pathlib
 import os
+import json
 import subprocess
 import sys
 import tempfile
@@ -160,6 +161,46 @@ class Tests(unittest.TestCase):
         response.read.return_value = b'{}'
         with patch.object(self.module.urllib.request, 'urlopen', return_value=response):
             self.assertFalse(self.module.PeerReadiness('http://127.0.0.1:8189', lambda: 32000)())
+
+    def response(self, value):
+        response = Mock()
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        response.read.return_value = json.dumps(value).encode()
+        return response
+
+    def test_malformed_peer_status_never_admits_or_unloads(self):
+        for value in ({'queue_running': []}, {'queue_running': [], 'queue_pending': None}, 'invalid'):
+            with self.subTest(value=value):
+                available = Mock(return_value=32000)
+                with patch.object(self.module.urllib.request, 'urlopen', return_value=self.response(value)) as request:
+                    self.assertFalse(self.module.PeerReadiness('http://127.0.0.1:8189', available)())
+                    self.assertEqual(request.call_count, 1)
+                available.assert_not_called()
+        for error in (ValueError('malformed JSON'), TimeoutError('peer timed out')):
+            with patch.object(self.module.urllib.request, 'urlopen', side_effect=error) as request:
+                self.assertFalse(self.module.PeerReadiness('http://127.0.0.1:8189', lambda: 32000)())
+                self.assertEqual(request.call_count, 1)
+
+    def test_pending_peer_does_not_deadlock_both_queues(self):
+        first, second = Queue(), Queue()
+        def peer_status(queue):
+            return self.response({'queue_running': list(queue.running.values()),
+                                  'queue_pending': list(queue.queue)})
+        def first_ready():
+            with patch.object(self.module.urllib.request, 'urlopen', return_value=peer_status(second)):
+                return self.module.PeerReadiness('http://127.0.0.1:8189', lambda: 32000)()
+        def second_ready():
+            with patch.object(self.module.urllib.request, 'urlopen', return_value=peer_status(first)):
+                return self.module.PeerReadiness('http://127.0.0.1:8188', lambda: 32000)()
+        self.guard(first, first_ready)
+        self.guard(second, second_ready)
+        self.assertEqual(first.get(timeout=0), ('prompt', 1))
+        self.assertIsNone(second.get(timeout=0))
+        first.task_done(1)
+        self.assertEqual(second.get(timeout=0), ('prompt', 1))
+        second.task_done(1)
+        self.assertIsNone(Lease.owner)
 
     @unittest.skipUnless(os.name == 'posix', 'Linux file lease')
     def test_file_lease_excludes_another_process_and_recovers_after_release(self):

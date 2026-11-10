@@ -54,22 +54,6 @@
     + '</div>';
   panel.append(physicsPanel);
 
-  const frPanel = document.createElement('details');
-  frPanel.id = 'faceRefinePanel';
-  frPanel.innerHTML = '<summary>H3 FaceRefine · Per-frame Face Restoration</summary>'
-    + '<div class="tip">Unavailable experimental integration. FaceRefine is disabled until its installer, saved settings and render validation are connected.</div>'
-    + '<div style="margin-top:10px">'
-      + '<label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input id="faceRefineEnable" type="checkbox" style="width:auto"> <strong>Enable H3 FaceRefine</strong></label>'
-      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">'
-        + '<div><label for="faceRefineCropFactor">Crop factor: <span id="faceRefineCropVal">2.5</span>×</label><input id="faceRefineCropFactor" type="range" min="1.5" max="4.0" step="0.1" value="2.5"></div>'
-        + '<div><label for="faceRefineDenoise">Denoise: <span id="faceRefineDenoiseVal">0.40</span></label><input id="faceRefineDenoise" type="range" min="0.15" max="0.70" step="0.05" value="0.40"></div>'
-      + '</div>'
-      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">'
-        + '<div><label for="faceRefineFeather">Feather (source px): <span id="faceRefineFeatherVal">6</span></label><input id="faceRefineFeather" type="range" min="2" max="32" step="2" value="6"></div>'
-        + '<div><label for="faceRefineIdentity">Identity Matching</label><select id="faceRefineIdentity"><option value="clip_vision" selected>CLIP Vision (Stylized 3D / Anime / Photo)</option><option value="largest_face">Auto Largest Face</option></select></div>'
-      + '</div>'
-    + '</div>';
-  panel.append(frPanel);
   document.querySelector('.model-hero').after(panel);H3Guidance.apply(panel);
   $('spatialPhysicsEnable').onchange = () => {
     let pLoRA = state.loras.find(l=>H3Configuration.isSpatialPhysics(l.name));
@@ -107,38 +91,6 @@
     if(vLoRA) { vLoRA.strength = val; changed(); }
   };
 
-  $('faceRefineEnable').onchange = () => {
-    state.facerefine = state.facerefine || {};
-    state.facerefine.enabled = $('faceRefineEnable').checked;
-    changed();
-  };
-  $('faceRefineCropFactor').oninput = () => {
-    const val = Number($('faceRefineCropFactor').value);
-    $('faceRefineCropVal').textContent = val.toFixed(1);
-    state.facerefine = state.facerefine || {};
-    state.facerefine.crop_factor = val;
-    changed();
-  };
-  $('faceRefineDenoise').oninput = () => {
-    const val = Number($('faceRefineDenoise').value);
-    $('faceRefineDenoiseVal').textContent = val.toFixed(2);
-    state.facerefine = state.facerefine || {};
-    state.facerefine.base_denoise = val;
-    changed();
-  };
-  $('faceRefineFeather').oninput = () => {
-    const val = Number($('faceRefineFeather').value);
-    $('faceRefineFeatherVal').textContent = String(val);
-    state.facerefine = state.facerefine || {};
-    state.facerefine.feather = val;
-    changed();
-  };
-  $('faceRefineIdentity').onchange = () => {
-    state.facerefine = state.facerefine || {};
-    state.facerefine.identity_model = $('faceRefineIdentity').value;
-    changed();
-  };
-
   function refreshPhysicsControls(){
     const pLoRA = state.loras.find(l=>H3Configuration.isSpatialPhysics(l.name));
     const vLoRA = state.loras.find(l=>H3Configuration.isVBVR(l.name));
@@ -157,30 +109,6 @@
         $('vbvrStrength').value = vLoRA.strength;
         $('vbvrVal').textContent = Number(vLoRA.strength).toFixed(2);
       }
-    }
-  }
-
-  function refreshFaceRefineControls(){
-    $('faceRefineEnable').disabled = true;
-    $('faceRefineEnable').title = 'Unavailable: this experimental pass is not integrated with saved render validation.';
-    state.facerefine = state.facerefine || {};
-    const fr = state.facerefine;
-    if($('faceRefineEnable')){
-      $('faceRefineEnable').checked = !!fr.enabled;
-      $('faceRefineEnable').disabled = true;
-      if(fr.crop_factor!=null) {
-        $('faceRefineCropFactor').value = fr.crop_factor;
-        $('faceRefineCropVal').textContent = Number(fr.crop_factor).toFixed(1);
-      }
-      if(fr.base_denoise!=null) {
-        $('faceRefineDenoise').value = fr.base_denoise;
-        $('faceRefineDenoiseVal').textContent = Number(fr.base_denoise).toFixed(2);
-      }
-      if(fr.feather!=null) {
-        $('faceRefineFeather').value = fr.feather;
-        $('faceRefineFeatherVal').textContent = String(fr.feather);
-      }
-      if(fr.identity_model) $('faceRefineIdentity').value = fr.identity_model;
     }
   }
 
@@ -278,7 +206,6 @@
     state.modelProfile=profile;
     renderLoras();
     refreshPhysicsControls();
-    refreshFaceRefineControls();
     refreshPikaControls();
     $('modelProfile').value=profile;document.body.dataset.modelAccent=H3Configuration.profiles[profile]?.accent||'original';
     document.querySelector('.model-hero h1').textContent=profile==='original'?'MiniMax H3':H3Configuration.profiles[profile]?.label||'MiniMax H3';

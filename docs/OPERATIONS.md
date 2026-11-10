@@ -4,7 +4,7 @@
 
 With the matching LTX `studio_shared_gpu` custom node installed, set `STUDIO_SHARED_GPU_LOCK` to the same absolute lease path in both workers. Set `STUDIO_SHARED_GPU_PEER=http://127.0.0.1:8189` for H3 and `http://127.0.0.1:8188` for LTX, adjusting ports to the actual workers. Restart only when idle.
 
-The guard reserves GPU execution before native queue admission. Waiting H3/Qwen and LTX jobs remain pending/cancellable instead of allocating together. It releases the lease after execution or process exit, checks peer readiness/CUDA memory and can unload an idle peer GPU cache while retaining RAM caches. Without these environment variables it is inactive. This coordinates native execution; it does not create one global FIFO across both Studio interfaces.
+The guard reserves GPU execution before native queue admission. Waiting H3/Qwen and LTX jobs remain pending/cancellable instead of allocating together. It releases the lease after execution or process exit, checks peer readiness/CUDA memory and can unload an idle peer GPU cache while retaining RAM caches. Without these environment variables it is inactive. The exclusive lease arbitrates pending jobs: a pending peer does not block the owner, while running peer work does. Unknown or malformed peer queue status blocks admission. Temporary GPU activity does not disable Generate; queued jobs remain cancellable. Studio status endpoints are not used as execution locks. This coordinates native execution; it does not create one global FIFO across both Studio interfaces.
 
 ## Optional Qwen Image 2.1 V2 LoRA
 

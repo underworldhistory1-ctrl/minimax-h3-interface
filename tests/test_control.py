@@ -89,6 +89,16 @@ class ControlTests(unittest.TestCase):
         self.assertTrue(result['controlnet_missing_reasons'])
         self.assertFalse(any('ControlNet' in reason for reason in result['missing_reasons']))
 
+    def test_capabilities_do_not_probe_or_cache_transient_peer_activity(self):
+        # The native GPU lease keeps jobs pending; a static capability response
+        # must not disable Generate based on another worker's temporary state.
+        with patch('urllib.request.urlopen') as request:
+            result = check_capabilities()
+        request.assert_not_called()
+        self.assertTrue(result['inference_enabled'])
+        self.assertIsNone(result['reason'])
+        self.assertFalse(result['facerefine_ready'])
+
 
 if __name__ == '__main__':
     unittest.main()
