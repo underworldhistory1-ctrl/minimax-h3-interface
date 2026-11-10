@@ -31,7 +31,7 @@ SOURCE_FILES = (
     "deploy/backup_h3_library.py", "deploy/restore_h3_library.py",
     "deploy/build_final_folder.py", "deploy/CLOUD_BOOTSTRAP.md", "deploy/SALAD_DEPLOYMENT.md",
     "deploy/salad/entrypoint.sh", "deploy/salad/nginx.conf.template",
-    "scripts/verify_h3_video.py", "docs/UX_FLOW.md", "docs/GRAPH_MAP.md",
+    "scripts/verify_h3_video.py", "scripts/studio_preview.py", "tests/e2e/README.md", "docs/UX_FLOW.md", "docs/GRAPH_MAP.md",
     "docs/ORGANIZATION_AND_REUSE.md", "docs/organization/organized-projects.png", "docs/organization/organized-elements.png", "docs/organization/reused-setup.png", "docs/organization/missing-reuse-blocked.png", "docs/organization/organization-mobile.png", "docs/organization/verification.json",
     "docs/PROJECT_WORKSPACE.md", "docs/SEED_AND_DURATION.md", "docs/FINAL_AUDIT.md", "docs/COMPATIBILITY_MATRIX.md", "docs/social-preview.png",
     "docs/demo/interface-elements.png", "docs/demo/interface-references.png", "docs/demo/interface-motioncache.png",
