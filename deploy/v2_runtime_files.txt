@@ -164,3 +164,4 @@ docs/RELEASE_2_14.md
 web/h3/project-settings.js
 web/h3/storage-status.js
 docs/RELEASE_2_15.md
+docs/RELEASE_2_16.md

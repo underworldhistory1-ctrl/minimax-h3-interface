@@ -56,3 +56,51 @@ jobs:
           name: failure-${{ matrix.os }}-py${{ matrix.python }}
           path: release-test/MANIFEST_SHA256.json
           if-no-files-found: ignore
+
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Browser and CPU media dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+          python -m pip install -r tests/requirements.txt
+          npm install --no-save --package-lock=false playwright@1.65.0
+          npx playwright install --with-deps chromium
+      - name: Real API browser journeys (simulated inference)
+        shell: bash
+        run: |
+          set -euo pipefail
+          for journey in browser-acceptance image-browser-acceptance continuation-browser-acceptance reference-browser-acceptance resolution-browser-acceptance spatial-storyboard-browser workspace-folds-browser custom-layout-browser selection-audit-browser project-settings-browser; do
+            node "tests/e2e/$journey.cjs"
+          done
+      - name: Connected controls and queue journey
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/studio_preview.py --port 18772 > /tmp/h3-preview.log 2>&1 &
+          preview_pid=$!
+          trap 'kill "$preview_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:18772/system_stats > /dev/null; then break; fi
+            sleep 1
+          done
+          node tests/e2e/connected-browser-acceptance.cjs
+      - name: Browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-failure
+          path: |
+            .studio-preview/screenshots/
+            /tmp/h3-preview.log
+          if-no-files-found: ignore

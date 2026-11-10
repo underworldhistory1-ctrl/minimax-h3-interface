@@ -117,41 +117,31 @@ class SharedGpuQueue:
 
 
 class PeerReadiness:
-    def __init__(self, url, available_mb, minimum_mb=30000, ltx_url='http://127.0.0.1:7860'):
+    def __init__(self, url, available_mb, minimum_mb=30000):
         self.url = url.rstrip('/')
-        self.ltx_url = ltx_url.rstrip('/')
         self.available_mb = available_mb
         self.minimum_mb = minimum_mb
         self.last_free = 0.0
 
     def __call__(self):
-        # 1. Never admit prompts while LTX Studio has an active job or queued jobs
-        try:
-            req = urllib.request.Request(self.ltx_url + '/api/status', headers={'User-Agent': 'H3SharedGpu'})
-            with urllib.request.urlopen(req, timeout=2) as response:
-                ltx_status = json.load(response)
-            if isinstance(ltx_status, dict):
-                if ltx_status.get('active_job') or ltx_status.get('queue_length', 0) > 0:
-                    return False
-        except urllib.error.URLError:
-            pass
-        except Exception:
-            pass
-
-        # 2. Never admit prompts while LTX ComfyUI worker (8189) is active or pending
+        # Never unload an active peer or infer idleness from malformed data.
         try:
             with urllib.request.urlopen(self.url + '/queue', timeout=2) as response:
                 queue = json.load(response)
-            if not isinstance(queue, dict) or not isinstance(queue.get('queue_running'), list):
+            if not isinstance(queue, dict) or any(
+                    not isinstance(queue.get(key), list)
+                    for key in ('queue_running', 'queue_pending')):
                 return False
-            if queue['queue_running'] or queue.get('queue_pending'):
+            # The held exclusive lease arbitrates pending work. Rejecting a
+            # pending peer here would deadlock two workers with queued jobs.
+            if queue['queue_running']:
                 return False
         except urllib.error.URLError as error:
             # A stopped peer has no active queue; memory still has to pass.
             if not isinstance(error.reason, ConnectionRefusedError):
                 return False
         except Exception:
-            pass
+            return False
         if self.available_mb() >= self.minimum_mb:
             return True
         if time.monotonic() - self.last_free >= 2:
@@ -187,7 +177,6 @@ def install_from_environment(queue):
     path = os.environ.get('STUDIO_SHARED_GPU_LOCK', '')
     if not peer and not path:
         return None
-    ltx_url = os.environ.get('STUDIO_LTX_URL', 'http://127.0.0.1:7860')
     if os.environ.get('STUDIO_SHARED_GPU_DISABLED', '').lower() in ('1', 'true', 'yes'):
         return None
     parsed = urlparse(peer)
@@ -212,7 +201,7 @@ def install_from_environment(queue):
         last_dynamic = dynamic
         return (free + reserved + dynamic) / 1024 ** 2
 
-    gate = SharedGpuQueue(queue, FileLease(path), PeerReadiness(peer, available_mb, ltx_url=ltx_url))
+    gate = SharedGpuQueue(queue, FileLease(path), PeerReadiness(peer, available_mb))
     gate.install()
     logger.info('Shared GPU admission enabled with peer %s and lock %s', peer, path)
     return gate

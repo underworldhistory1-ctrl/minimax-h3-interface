@@ -39,6 +39,7 @@ class V2PromotionInstallTests(unittest.TestCase):
  def test_packager_contains_runtime_and_pinned_context_dependency(self):
   package=load('v2_package','deploy/build_final_folder.py');installer=load('v2_installer3','deploy/install_windows.py')
   self.assertTrue(set(installer.RUNTIME_FILES).issubset(package.SOURCE_FILES))
+  self.assertIn('scripts/studio_preview.py',package.SOURCE_FILES)
   for name in package.SOURCE_FILES:self.assertTrue((ROOT/name).is_file(),name)
   pin='361624fb406b63eb6694442eac6c895fc1533a70'
   for name in ('deploy/bootstrap_h3_server.sh','deploy/install_windows.py','Dockerfile.salad'):self.assertIn(pin,(ROOT/name).read_text())

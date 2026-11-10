@@ -1,13 +1,13 @@
 # Changelog
 
-## Unreleased
+## 2.16.0 - 2026-11-10
 
 - Preserve delayed reference-audio timelines during upload, including already-24-fps video.
 - Keep LoRA declaration and loader order consistent; gate missing Singularity checkpoints and retain shared-GPU admission as opt-in.
 - Clarify that Performance + camera includes action timing.
 
 - Integrate optional Spatial & Physics LoRA (`wushu_spatial_physics_clean_3000_pruned.safetensors`) and Licon VBVR LoRA (`H3-Licon-VBVR-I2V.safetensors`) with dedicated UI controls, strength sliders and multi-adapter stacking support.
-- Keep incomplete FaceRefine integration disabled explicitly rather than exposing a checkbox that does not affect generation.
+- Remove unfinished FaceRefine controls from the released UI and reject unsupported FaceRefine requests.
 - Fix Model Configuration panel mounting order, preventing premature listener attachment before DOM insertion.
 - Fix Singularity v2 checkpoint persistence across mode changes and page reloads.
 - Unlock Generative Latent Refinement (10 steps, 0.4 denoise, res_multistep) for Singularity v2 + Pika Flex Turbo 8-step HD Ref2VA workflows.
@@ -16,7 +16,11 @@
 - Add a dedicated installed Pika Flex Turbo selector with mode-aware variants, accurate active sampling summaries and visible selection-change notices.
 - Preserve compatible Pika adapters when switching into the installed Singularity v2 checkpoint; retain explicitly restored checkpoint choices.
 - Surface compiled-prompt length guidance and native reference-role bypass warnings without truncation.
-- Focused correction checks: 12 Python and 11 JavaScript tests passed; no additional GPU renders were run for this source promotion.
+- Fix shared-GPU pending-queue deadlock, fail closed for malformed peer status and remove transient activity from cached capabilities.
+- Prevent grouped-reference drag grips from covering reorder buttons in expanded cards.
+- Stabilize concurrent-admission tests on Windows and drain outstanding requests before fixture cleanup.
+- Add real-API browser acceptance to CI alongside the Windows/Linux Python 3.12/3.13 matrix and immutable archive checks.
+- Record owner-reported render acceptance separately from automated source/browser evidence. See [release verification](docs/RELEASE_2_16.md).
 
 ## 2.15.0 - 2026-11-04
 

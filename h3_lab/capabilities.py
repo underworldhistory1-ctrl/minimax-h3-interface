@@ -57,23 +57,10 @@ def check_capabilities(folder_paths_module=None, nodes_module=None) -> dict:
     # Optional paths remain independent of baseline readiness.
     from .control import CONTROL_FILE, CONTROL_SIZE
     control_nodes = ['ModelPatchLoader', 'MiniMaxH3FunControlNetApply', 'LoadVideo', 'GetVideoComponents', 'LoadImage', 'ImageToMask']
-    # FaceRefine capability detection
-    facerefine_nodes = ["H3FaceTrackCrop", "H3FaceStitch", "MiniMaxH3NativeAudioLock", "H3InjectVideoLatent", "H3PerFrameDenoise"]
-    facerefine_ready = all(name in registered_nodes for name in facerefine_nodes)
+    # Reserved response fields remain for older clients. This release does not
+    # expose an incomplete FaceRefine workflow, even if external nodes exist.
     facerefine_detectors = []
     clip_vision_models = []
-    if folder_paths_module and hasattr(folder_paths_module, "get_filename_list"):
-        for sub in ("ultralytics_bbox", "ultralytics"):
-            try:
-                facerefine_detectors.extend(folder_paths_module.get_filename_list(sub))
-            except Exception:
-                pass
-        try:
-            clip_vision_models.extend(folder_paths_module.get_filename_list("clip_vision"))
-        except Exception:
-            pass
-    facerefine_detectors = list(dict.fromkeys(facerefine_detectors))
-    clip_vision_models = list(dict.fromkeys(clip_vision_models))
 
     control_missing = [f"Required ControlNet node '{name}' is not registered." for name in control_nodes if name not in registered_nodes]
     control_weight = False
@@ -159,41 +146,13 @@ def check_capabilities(folder_paths_module=None, nodes_module=None) -> dict:
         if not ok:
             missing_reasons.append(f"Required model '{name}' is missing or incomplete.")
 
-    # 5. Shared GPU Mutual Exclusion Check (LTX Studio)
-    ltx_busy = False
-    lock_file = "/tmp/studio-shared-gpu.lock"
-    try:
-        import fcntl
-        if os.path.exists(lock_file):
-            fd = os.open(lock_file, os.O_RDWR)
-            try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                fcntl.flock(fd, fcntl.LOCK_UN)
-            except BlockingIOError:
-                ltx_busy = True
-            finally:
-                os.close(fd)
-    except Exception:
-        pass
-
-    if not ltx_busy:
-        try:
-            import json, urllib.request
-            req = urllib.request.Request("http://127.0.0.1:7860/api/status", headers={"User-Agent": "H3Capabilities"})
-            with urllib.request.urlopen(req, timeout=1) as resp:
-                data = json.load(resp)
-                if isinstance(data, dict) and (data.get("active_job") or data.get("queue_length", 0) > 0):
-                    ltx_busy = True
-        except Exception:
-            pass
-
     from .control_preprocess import preprocessor_status
     preprocessors = preprocessor_status()
     from .runtime_attention import runtime_attention
     return {"turbo_ready": turbo_ready, "turbo_ref_ready": turbo_ref_ready,
         **discovered,
-        "inference_enabled": not ltx_busy,
-        "reason": "LTX Studio is rendering. H3 generation is paused." if ltx_busy else None,
+        "inference_enabled": True,
+        "reason": None,
         'audio_refine_ready': all(name in registered_nodes for name in ('H3StudioAudioRefineMask', 'H3StudioAudioRestoreVideo')),
         "server_attention": runtime_attention(),
         "controlnet_references_ready": not control_missing and reference_control_supported(),
@@ -210,7 +169,7 @@ def check_capabilities(folder_paths_module=None, nodes_module=None) -> dict:
         "guides_ready": add_guide_ready and all(native_status.values()) and bool(base_fl_ready),
         "continuation_nodes": continuation_status,
         "models": models_status,
-        "facerefine_ready": facerefine_ready and len(facerefine_detectors) > 0,
+        "facerefine_ready": False,
         "facerefine_detectors": facerefine_detectors,
         "clip_vision_models": clip_vision_models,
         "spatial_physics_ready": folder_paths_module.get_full_path("loras", "wushu_spatial_physics_clean_3000_pruned.safetensors") is not None if folder_paths_module else False,
