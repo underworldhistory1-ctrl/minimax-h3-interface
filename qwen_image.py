@@ -59,10 +59,26 @@ MODEL_PROFILES = {
     },
 }
 
+# Official Comfy-Org files, immutable revision in download_qwen_image_models.py.
+for _precision, _size, _digest in (
+    ("int8", 7_256_787_829, "8144a0182964aa8403ad6dbc011db837304167d235161b9aabaa8532e967314c"),
+    ("bf16", 14_230_280_616, "8b74237a7f505773e2c66726fa696444b4c704585c93a347cff9044937f7914a"),
+):
+    _base = MODEL_PROFILES[_precision]
+    _unet = f"qwen_image_2.1_turbo_{'int8_convrot' if _precision == 'int8' else 'bf16'}.safetensors"
+    _files = (ModelFile("diffusion_models", _unet, _size, _digest), *_base["files"][1:])
+    MODEL_PROFILES[f"turbo_{_precision}"] = {
+        "label": f"Turbo 8-step / {_precision.upper()}", "unet": _unet,
+        "clip": _base["clip"], "files": _files, "bytes": sum(item.size for item in _files),
+    }
+
+TURBO_NODES = ("ManualSigmas", "KSamplerSelect", "RandomNoise", "CFGGuider", "SamplerCustomAdvanced")
+TURBO_SIGMAS = "1.0, 0.978453, 0.95418, 0.926626, 0.89508, 0.845148, 0.704534, 0.414568, 0"
+
 REQUIRED_QWEN_NODES = (
     "UNETLoader", "CLIPLoader", "VAELoader", "TextEncodeQwenImage21",
     "QwenImage21Cache", "EmptyLatentImage", "KSampler", "VAEDecode",
-    "ImageScale", "ImageScaleToTotalPixels", "QwenStudioSaveImage",
+    "LoadImage", "ImageScale", "ImageScaleToTotalPixels", "QwenStudioSaveImage",
 )
 
 
@@ -130,6 +146,19 @@ def selected_qwen_lora(request):
 
 
 def build_qwen_graph(request, uploads, token):
+    cache_device = request.get("cache_device", "auto")
+    cache_dtype = request.get("cache_dtype", "default")
+    if cache_device not in {"auto", "gpu", "cpu", "off"} or cache_dtype not in {"default", "int8", "int4"}:
+        raise ValueError("Invalid reference cache settings")
+    negative_prompt = str(request.get("negative_prompt", ""))
+    try:
+        cfg = float(request.get("cfg", 2.0 if negative_prompt.strip() else 1.0))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Guidance must be between 1 and 5") from exc
+    if not math.isfinite(cfg) or not 1 <= cfg <= 5:
+        raise ValueError("Guidance must be between 1 and 5")
+    if negative_prompt.strip() and cfg == 1:
+        raise ValueError("Negative prompt requires guidance above 1")
     lora_name, lora_strength = selected_qwen_lora(request)
     mode = str(request.get("mode", "create")).lower()
     if mode not in {"create", "edit"}:
@@ -137,6 +166,9 @@ def build_qwen_graph(request, uploads, token):
     profile_key = str(request.get("profile", "int8")).lower()
     if profile_key not in MODEL_PROFILES:
         raise ValueError(f"Unknown Qwen profile: {profile_key}")
+    turbo = profile_key.startswith("turbo_")
+    if turbo and (cfg != 1 or negative_prompt.strip() or lora_name):
+        raise ValueError("Qwen Turbo requires guidance 1, no negative prompt and no extra LoRA")
     prompt = str(request.get("prompt", "")).strip()
     if not prompt:
         raise ValueError("Prompt is required")
@@ -149,7 +181,7 @@ def build_qwen_graph(request, uploads, token):
     height = _integer(request.get("height", 1024), "Height", 256, 2752)
     if width % 32 or height % 32:
         raise ValueError("Width and height must be a multiple of 32")
-    steps = _integer(request.get("steps", 40), "Steps", 1, 100)
+    steps = 8 if turbo else _integer(request.get("steps", 40), "Steps", 1, 100)
     try:
         from .h3_lab.render_values import seed_value
     except ImportError:
@@ -166,6 +198,7 @@ def build_qwen_graph(request, uploads, token):
     profile = MODEL_PROFILES[profile_key]
     metadata = {
         "lora": lora_name, "loraStrength": lora_strength,
+        "negative_prompt": negative_prompt, "cfg": cfg, "cache_device": cache_device, "cache_dtype": cache_dtype,
         "kind": "image", "mode": mode, "profile": profile_key, "prompt": prompt,
         "width": width, "height": height, "steps": steps, "seed": seed,
         "transparent": bool(mode == "create" and request.get("transparent")),
@@ -179,7 +212,7 @@ def build_qwen_graph(request, uploads, token):
         "clip": {"class_type": "CLIPLoader", "inputs": {"clip_name": profile["clip"], "type": "qwen_image", "device": "default"}},
         "vae": {"class_type": "VAELoader", "inputs": {"vae_name": VAE.name}},
         "enc": {"class_type": "TextEncodeQwenImage21", "inputs": {
-            "clip": ["clip", 0], "prompt": prompt, "negative_prompt": "", "resolution": reference_resolution,
+            "clip": ["clip", 0], "prompt": prompt, "negative_prompt": negative_prompt, "resolution": reference_resolution,
         }},
         "decode": {"class_type": "VAEDecode", "inputs": {"samples": ["sampler", 0], "vae": ["vae", 0]}},
         "save": {"class_type": "QwenStudioSaveImage", "inputs": {
@@ -217,15 +250,26 @@ def build_qwen_graph(request, uploads, token):
                 image_link = [scale_id, 0]
             graph["enc"]["inputs"][f"images.image_{index}"] = image_link
         graph["cache"] = {"class_type": "QwenImage21Cache", "inputs": {
-            "model": model_link, "device": "auto", "dtype": "default",
+            "model": model_link, "device": cache_device, "dtype": cache_dtype,
         }}
         model_link = ["cache", 0]
         latent_link = ["enc", 2]
     graph["sampler"] = {"class_type": "KSampler", "inputs": {
-        "model": model_link, "seed": seed, "steps": steps, "cfg": 1.0,
+        "model": model_link, "seed": seed, "steps": steps, "cfg": cfg,
         "sampler_name": "euler", "scheduler": "simple", "positive": ["enc", 0],
         "negative": ["enc", 1], "latent_image": latent_link, "denoise": 1.0,
     }}
+    if turbo:
+        graph.update({
+            "sigmas": {"class_type": "ManualSigmas", "inputs": {"sigmas": TURBO_SIGMAS}},
+            "noise": {"class_type": "RandomNoise", "inputs": {"noise_seed": seed}},
+            "sample_method": {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "euler"}},
+            "guider": {"class_type": "CFGGuider", "inputs": {
+                "model": model_link, "positive": ["enc", 0], "negative": ["enc", 1], "cfg": 1.0}},
+            "sampler": {"class_type": "SamplerCustomAdvanced", "inputs": {
+                "noise": ["noise", 0], "guider": ["guider", 0], "sampler": ["sample_method", 0],
+                "sigmas": ["sigmas", 0], "latent_image": latent_link}},
+        })
     return graph
 
 

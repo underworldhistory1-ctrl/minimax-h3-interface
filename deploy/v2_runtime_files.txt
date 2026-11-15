@@ -91,6 +91,8 @@ h3_lab/runtime_fingerprint.py
 deploy/install_python_dependencies.py
 docs/HARDENING_REVIEW.md
 web/h3/image-reference-store.js
+web/h3/qwen-reference-plan.js
+docs/QWEN_REFERENCE_WORKSPACE.md
 h3_lab/shared_timing.py
 deploy/runtime_patches.py
 deploy/runtime_policy.py
@@ -165,3 +167,4 @@ web/h3/project-settings.js
 web/h3/storage-status.js
 docs/RELEASE_2_15.md
 docs/RELEASE_2_16.md
+docs/RELEASE_2_17.md

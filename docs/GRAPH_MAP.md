@@ -58,6 +58,7 @@ The Image workspace is separate from all H3 video branches. Both Create and Edit
 
 - **Create:** `EmptyLatentImage` supplies the selected 1/1.6/4 MP canvas. Transparency adds Qwen's documented RGBA instruction.
 - **References:** `LoadImage` supplies 1–10 ordered photos through `images.image_N`; the first photo defines the canvas unless the user explicitly resizes it. The UI offers Move up/down because image order changes both `<imageN>` mentions and the canvas source. `QwenImage21Cache` is enabled and the encoder's latent output feeds the sampler. Adding images requests image-conditioned generation, not pixel-locked compositing; an explicit instruction must state what to take from each image.
+- **Reference guidance:** per-image roles/instructions and task workflows compile into the encoder prompt; the preview shows resolved aliases. Negative prompt and selected native cache settings are saved and connected. Masks are semantic references, not masked latent constraints. [Behavior and limits](QWEN_REFERENCE_WORKSPACE.md).
 - **Profiles:** INT8 and BF16 are selectable only when every exact file in that profile has the expected size. Salad defaults to INT8.
 
 

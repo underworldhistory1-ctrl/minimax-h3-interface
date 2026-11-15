@@ -28,6 +28,8 @@ async def fixture(request, handler):
         return web.json_response({'ok':True})
     if path == '/h3_studio/image_readiness': return web.json_response({'ready':not image_standby,'inference_enabled':not image_standby,'reason':'Editing standby: inference is disabled while production renders use the shared GPU.','profiles':{'int8':{'ready':True},'bf16':{'ready':True}},'nodes':dict.fromkeys(['UNETLoader','CLIPLoader','VAELoader','TextEncodeQwenImage21','QwenImage21Cache','KSampler','EmptyLatentImage','VAEDecode','QwenStudioSaveImage','LoadImage','ImageScale'],True)})
     if path == '/h3_studio/image_library': return web.json_response({'items':[]})
+    if path == '/h3_studio/image_file':
+        return web.FileResponse(image_dir/'qwen_studio_fixture.png')
     if path == '/system_stats': return web.json_response({'devices':[{'name':'CPU browser fixture'}]})
     if path == '/h3_studio/readiness': return web.json_response({'models':MODELS,'nodes':dict.fromkeys(NODES,True),'quality':{'h3_vae_tile_fix':True},'system_ram_limit_gb':128})
     if path == '/h3_studio/loras': return web.json_response({'loras':[]})
@@ -50,10 +52,15 @@ async def fixture(request, handler):
     if path == '/h3_studio/upload_ref':
         if request.content_type.startswith('multipart/'):
             reader=await request.multipart();field=await reader.next();data=await field.read();filename=field.filename
+        elif request.content_type == 'application/json':
+            import base64
+            body=await request.json();data=base64.b64decode(body['data']);filename=body['filename']
         else:
             data=await request.read();filename=request.query.get('filename','fixture.bin')
         kind=request.query.get('kind','image')
-        return web.json_response({'name':f'fixture_{len(data)}_{filename}','width':1280,'height':704,'kind':kind,'fps':24,'frame_count':48,'duration':2,'has_audio':True})
+        name=f'fixture_{len(data)}_{pathlib.Path(filename).name}'
+        target=pathlib.Path(store.name)/'input'/name;target.parent.mkdir(exist_ok=True);target.write_bytes(data)
+        return web.json_response({'name':name,'width':1280,'height':704,'kind':kind,'fps':24,'frame_count':48,'duration':2,'has_audio':True})
     if path == '/prompt':
         record=await request.json();record['image_prompt_id']='qwen_fixture_'+str(len(captured)+1);captured.append(record);image_queue_mode='pending'
         return web.json_response({'prompt_id':record['image_prompt_id'],'number':1})

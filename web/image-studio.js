@@ -9,7 +9,9 @@ const state={
 sessionStorage.setItem('qwen.clientId',state.clientId);
 const profileFiles={
   int8:{unet:"qwen_image_2.1_int8_convrot.safetensors",clip:"qwen3vl_8b_int8_convrot.safetensors"},
-  bf16:{unet:"qwen_image_2.1_bf16.safetensors",clip:"qwen3vl_8b_bf16.safetensors"}
+  bf16:{unet:"qwen_image_2.1_bf16.safetensors",clip:"qwen3vl_8b_bf16.safetensors"},
+  turbo_int8:{unet:"qwen_image_2.1_turbo_int8_convrot.safetensors",clip:"qwen3vl_8b_int8_convrot.safetensors"},
+  turbo_bf16:{unet:"qwen_image_2.1_turbo_bf16.safetensors",clip:"qwen3vl_8b_bf16.safetensors"}
 };
 const vaeName="qwen_image_2.1_vae_bf16.safetensors";
 const sizeMap={
@@ -54,6 +56,12 @@ function estimateSeconds(){
   const base=profile==="bf16"?1.25:1;return Math.max(20,(w*h/1048576)*steps*.8*base+(mode==="edit"?18:8));
 }
 function updateSettings(){
+  const turbo=$("profile").value.startsWith("turbo_");
+  if(turbo&&!state.turboControls)state.baselineSteps=$("steps").value;
+  if(!turbo&&state.turboControls)$("steps").value=state.baselineSteps||"40";
+  state.turboControls=turbo;$("steps").disabled=state.busy||turbo;
+  if(turbo)$("steps").value="8";
+
   const hasRefs=state.refs.length>0,sourceCanvas=hasRefs&&!$("customSize").checked;
   $("referenceOptions").hidden=!hasRefs;$("referenceCount").textContent=hasRefs?`${state.refs.length}/10 attached`+(state.refsSaving?" · saving…":state.refsSaved?" · saved in this browser":""):"Optional";
   $("aspect").disabled=state.busy;$("resolution").disabled=state.busy;$("canvasOptions").hidden=!hasRefs;$("referenceResolution").disabled=state.busy||state.refs.length<2;$("transparentLabel").hidden=hasRefs;
@@ -64,7 +72,7 @@ function updateSettings(){
 let referenceSignature='',referenceWrite=Promise.resolve(),referenceWriteVersion=0;
 function persistReferences(){
   if(!state.referencesReady||state.referencesSessionOnly)return referenceWrite;
-  const signature=JSON.stringify(state.refs.map(ref=>[ref.id,ref.name,ref.width,ref.height]));
+  const signature=JSON.stringify(state.refs.map(ref=>[ref.id,ref.name,ref.width,ref.height,ref.role,ref.instructions]));
   if(signature===referenceSignature)return referenceWrite;
   referenceSignature=signature;
   const version=++referenceWriteVersion;
@@ -78,9 +86,11 @@ function persistReferences(){
   });
   return referenceWrite;
 }
+const imageExtraControls=["imageGuidance","negativePrompt","imageWorkflow","cacheDevice","cacheDtype"];
+for(const [value,item] of Object.entries(QwenReferencePlan.workflows)){const option=document.createElement("option");option.value=value;option.textContent=item.label;$("imageWorkflow").append(option);}
 function saveDraft(){
   if(!state.referencesReady)return;
-  sessionStorage.setItem("qwen.imageDraft",JSON.stringify({prompt:$("prompt").value,lora:$("lora").value,loraStrength:$("loraStrength").value,profile:$("profile").value,aspect:$("aspect").value,resolution:$("resolution").value,steps:$("steps").value,seed:$("seed").value,transparent:$("transparent").checked,referenceResolution:$("referenceResolution").value,customSize:$("customSize").checked,fitReferences:$("fitReferences").checked}));
+  sessionStorage.setItem("qwen.imageDraft",JSON.stringify({baselineSteps:state.baselineSteps,...Object.fromEntries(imageExtraControls.map(id=>[id,$(id).value])),prompt:$("prompt").value,lora:$("lora").value,loraStrength:$("loraStrength").value,profile:$("profile").value,aspect:$("aspect").value,resolution:$("resolution").value,steps:$("steps").value,seed:$("seed").value,transparent:$("transparent").checked,referenceResolution:$("referenceResolution").value,customSize:$("customSize").checked,fitReferences:$("fitReferences").checked}));
   void persistReferences();
 }
 window.QwenTabState={prepareReload:async()=>{
@@ -90,13 +100,20 @@ window.QwenTabState={prepareReload:async()=>{
 }};
 function restoreDraft(){
   let draft={};try{draft=JSON.parse(sessionStorage.getItem("qwen.imageDraft")||"{}");}catch{}
-  for(const id of ["prompt","profile","aspect","resolution","steps","seed","referenceResolution","lora","loraStrength"]){if(draft[id]!==undefined&&$(id))$(id).value=String(draft[id]);}
+  for(const id of [...imageExtraControls,"prompt","profile","aspect","resolution","steps","seed","referenceResolution","lora","loraStrength"]){if(draft[id]!==undefined&&$(id))$(id).value=String(draft[id]);}
   if($("seed").value.trim()&&$("seed").value.trim()!=="-1"){try{$("seed").value=String(H3RenderValues.seed($("seed").value));}catch{$("seed").value="42";showError("The saved seed was invalid. Reset to the default42.");}}
+  state.baselineSteps=draft.baselineSteps||"40";state.turboControls=$("profile").value.startsWith("turbo_");
   $("transparent").checked=!!draft.transparent;$("customSize").checked=!!draft.customSize;$("fitReferences").checked=draft.fitReferences!==false;
 }
 function validName(name){return /^[\p{L}\p{N}_-]+$/u.test(name);}
 function suggestedName(file){const base=file.name.replace(/\.[^.]+$/,""),clean=base.replace(/[^\p{L}\p{N}_-]+/gu,"_").replace(/^_+|_+$/g,"").slice(0,30)||"image";let name=clean,index=2;while(state.refs.some(ref=>ref.name.toLowerCase()===name.toLowerCase()))name=`${clean}_${index++}`;return name;}
-function resolveMentions(prompt){const names=new Map(state.refs.map((ref,index)=>[ref.name.toLowerCase(),index+1]));return prompt.replace(/(^|[^\p{L}\p{N}_])@([\p{L}\p{N}_-]+)/gu,(full,prefix,name)=>{const index=names.get(name.toLowerCase());if(!index)throw Error(`@${name} has no attached reference. Add it or remove the mention.`);return `${prefix}<image${index}>`;});}
+function resolveMentions(prompt){return QwenReferencePlan.compile(prompt,state.refs,$("imageWorkflow").value);}
+function refreshPromptPreview(){
+  document.querySelectorAll('#referenceList textarea').forEach((field,index)=>{if(field!==document.activeElement)field.value=state.refs[index]?.instructions||'';});
+  try{const prompt=resolveMentions($("prompt").value);$("promptPreview").textContent=prompt+"\n\n"+state.refs.map((ref,index)=>`@${ref.name} → <image${index+1}> → ${ref.file.name}${index===0?' (canvas source)':''}`).join("\n");}
+  catch(error){$("promptPreview").textContent=error.message;}
+}
+$("refreshPromptPreview").onclick=refreshPromptPreview;
 function insertMention(name){const field=$("prompt"),at=field.selectionStart,before=field.value.slice(0,at),match=before.match(/@([\p{L}\p{N}_-]*)$/u),start=match?at-match[0].length:at,token=`@${name} `;field.setRangeText(token,start,at,"end");H3StudioUX.revealControl(field);field.focus();saveDraft();renderMentions();}
 function renderMentions(){
   const field=$("prompt"),list=$("mentionList"),menu=$("mentionMenu");list.replaceChildren();menu.replaceChildren();
@@ -114,15 +131,18 @@ function moveReference(index,direction){
 function commitImageReferenceOrder(next){
   if(state.busy||!state.referencesReady)return;
   const before=state.refs;if(next.length!==before.length||new Set(next).size!==before.length||next.some(ref=>!before.includes(ref)))throw Error('Reference order changed. Try again.');
-  $('prompt').value=H3ReferenceOrder.remapQwen($('prompt').value,before,next);state.refs=next;renderRefs();saveDraft();showError('');
+  $('prompt').value=H3ReferenceOrder.remapQwen($('prompt').value,before,next);for(const ref of next)ref.instructions=H3ReferenceOrder.remapQwen(ref.instructions||'',before,next);state.refs=next;renderRefs();saveDraft();showError('');
 }
 
 function renderRefs(){
   H3Drag.destroyTree($("referenceList"));const before=state.refs.slice();
   $("referenceList").replaceChildren();state.refs.forEach((ref,index)=>{
     const row=document.createElement("div");row.className="ref";const image=document.createElement("img");image.src=ref.url;image.alt=`Preview of image ${index+1}`;
-    const text=document.createElement("div");const title=document.createElement("strong");title.textContent=`image${index+1} · ${ref.file.name}`;const meta=document.createElement("small");meta.dataset.referenceCanvas=String(index===0);meta.textContent=fmtBytes(ref.file.size)+(index===0?" · sets canvas size":" · reference");const nameLabel=document.createElement("label");nameLabel.textContent="MENTION NAME";const nameInput=document.createElement("input");nameInput.className="ref-name";nameInput.value=ref.name;nameInput.maxLength=32;nameInput.setAttribute("aria-label",`Mention name for image ${index+1}`);nameInput.onchange=()=>{const next=nameInput.value.trim();if(!validName(next)||state.refs.some(other=>other!==ref&&other.name.toLowerCase()===next.toLowerCase())){showError("Use a unique reference name with letters, numbers, _ or -.");nameInput.value=ref.name;return;}const old=ref.name;ref.name=next;if(old!==next){const escaped=old.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");$("prompt").value=$("prompt").value.replace(new RegExp(`(^|[^\\p{L}\\p{N}_])@${escaped}(?![\\p{L}\\p{N}_-])`,"gu"),(full,prefix)=>`${prefix}@${next}`);}showError("");renderMentions();saveDraft();};nameInput.oninput=()=>{if(validName(nameInput.value.trim())&&!state.refs.some(other=>other!==ref&&other.name.toLowerCase()===nameInput.value.trim().toLowerCase()))nameInput.onchange();};text.append(title,meta,nameLabel,nameInput);
-    const remove=document.createElement("button");remove.className="button alt small";remove.type="button";remove.textContent="Remove";remove.onclick=()=>{if(state.busy)return;URL.revokeObjectURL(ref.url);state.refs.splice(index,1);renderRefs();saveDraft();};
+    const text=document.createElement("div");const title=document.createElement("strong");title.textContent=`image${index+1} · ${ref.file.name}`;const meta=document.createElement("small");meta.dataset.referenceCanvas=String(index===0);meta.textContent=fmtBytes(ref.file.size)+(index===0?" · sets canvas size":" · reference");const nameLabel=document.createElement("label");nameLabel.textContent="MENTION NAME";const nameInput=document.createElement("input");nameInput.className="ref-name";nameInput.value=ref.name;nameInput.maxLength=32;nameInput.setAttribute("aria-label",`Mention name for image ${index+1}`);nameInput.onchange=()=>{const next=nameInput.value.trim();if(!validName(next)||state.refs.some(other=>other!==ref&&other.name.toLowerCase()===next.toLowerCase())){showError("Use a unique reference name with letters, numbers, _ or -.");nameInput.value=ref.name;return;}const old=ref.name;ref.name=next;$("prompt").value=QwenReferencePlan.rename($("prompt").value,old,next);for(const item of state.refs){if(item.instructions)item.instructions=QwenReferencePlan.rename(item.instructions,old,next);}showError("");renderMentions();refreshPromptPreview();saveDraft();};nameInput.oninput=()=>{if(validName(nameInput.value.trim())&&!state.refs.some(other=>other!==ref&&other.name.toLowerCase()===nameInput.value.trim().toLowerCase()))nameInput.onchange();};text.append(title,meta,nameLabel,nameInput);
+    const remove=document.createElement("button");remove.className="button alt small";remove.type="button";remove.textContent="Remove";remove.onclick=()=>{if(state.busy)return;const before=state.refs.slice(),after=before.filter(item=>item!==ref);
+      const remap=text=>String(text||'').replace(/<image(\d+)>/gi,(whole,n)=>{const item=before[Number(n)-1];return item===ref?'@'+ref.name:item?'<image'+(after.indexOf(item)+1)+'>':whole;});
+      $("prompt").value=remap($("prompt").value);for(const item of after)item.instructions=remap(item.instructions);
+      URL.revokeObjectURL(ref.url);state.refs=after;renderRefs();saveDraft();};
     const aliasRow=document.createElement("div");aliasRow.className="ref-alias-row";aliasRow.append(nameLabel,nameInput);
     const insert=document.createElement("button");insert.type="button";insert.className="button alt small ref-insert";insert.textContent=`Insert @${ref.name} into prompt`;insert.title=insert.textContent;insert.disabled=state.busy;insert.onclick=()=>{insertMention(ref.name);$("prompt").scrollIntoView({behavior:"smooth",block:"center"});};
     nameInput.addEventListener("input",()=>{insert.textContent=`Insert @${ref.name} into prompt`;insert.title=insert.textContent;});
@@ -135,8 +155,16 @@ function renderRefs(){
       button.onclick=()=>moveReference(index,direction);order.append(button);
     }
     row.classList.add('image-reference-row');row.dataset.referenceIndex=String(index);const grip=H3Drag.handle('Move image reference '+ref.name,offset=>moveReference(index,offset),'image-reference-handle');grip.disabled=state.busy||!state.referencesReady;
-    row.append(grip,image,text,remove,aliasRow,order,insert);$("referenceList").append(row);
-  });renderMentions();updateSettings();
+    const guidance=document.createElement("div");guidance.className="ref-alias-row";
+    const roleLabel=document.createElement("label");roleLabel.textContent="USE FROM THIS IMAGE";
+    const role=document.createElement("select");role.setAttribute("aria-label",`Role for image ${index+1}`);
+    for(const [value,label] of Object.entries(QwenReferencePlan.roles)){const option=document.createElement("option");option.value=value;option.textContent=label;role.append(option);}
+    role.value=ref.role||"context";role.disabled=state.busy;role.onchange=()=>{ref.role=role.value;saveDraft();refreshPromptPreview();};
+    const instructionLabel=document.createElement("label");instructionLabel.textContent="TAKE / PRESERVE / EXCLUDE";
+    const instructions=document.createElement("textarea");instructions.rows=2;instructions.placeholder="What to take from this image, what to preserve or ignore…";instructions.value=ref.instructions||"";instructions.maxLength=4000;instructions.disabled=state.busy;instructions.setAttribute("aria-label",`Instructions for image ${index+1}`);instructions.oninput=()=>{ref.instructions=instructions.value;saveDraft();refreshPromptPreview();};
+    guidance.append(roleLabel,role,instructionLabel,instructions);
+    row.append(grip,image,text,remove,aliasRow,order,insert,guidance);$("referenceList").append(row);
+  });renderMentions();updateSettings();refreshPromptPreview();
   H3Drag.attach($('referenceList'),{selector:'.ref',handle:'.image-reference-handle',locked:()=>state.busy||!state.referencesReady,onCancel:renderRefs,onCommit:()=>{
     if(before.length!==state.refs.length||before.some((ref,index)=>ref!==state.refs[index])){renderRefs();return;}
     commitImageReferenceOrder(H3ReferenceOrder.permutation(before,[...$('referenceList').children].map(n=>Number(n.dataset.referenceIndex))));
@@ -144,11 +172,11 @@ function renderRefs(){
 }
 $("addReferences").onclick=()=>{if(!state.busy&&state.referencesReady)$("referenceFiles").click();};
 $("referenceFiles").onchange=()=>{
-  if(!state.referencesReady)return;
+  if(!state.referencesReady||state.busy)return;
   const incoming=[...$("referenceFiles").files];for(const file of incoming){
-    if(state.refs.length>=10)break;
+    if(state.refs.length>=10){showError("Qwen Image supports up to 10 images. Remaining files were not added.");break;}
     if(!/\.(png|jpe?g|webp)$/i.test(file.name)||!file.size||file.size>25*1024*1024){showError("Use non-empty PNG, JPG or WebP images under 25 MB.");continue;}
-    const ref={id:crypto.randomUUID(),file,url:URL.createObjectURL(file),name:suggestedName(file),width:0,height:0};state.refs.push(ref);createImageBitmap(file).then(bitmap=>{ref.width=bitmap.width;ref.height=bitmap.height;bitmap.close();updateSettings();void persistReferences();}).catch(()=>{});
+    const ref={id:crypto.randomUUID(),file,url:URL.createObjectURL(file),name:suggestedName(file),role:"context",instructions:"",width:0,height:0};state.refs.push(ref);createImageBitmap(file).then(bitmap=>{ref.width=bitmap.width;ref.height=bitmap.height;bitmap.close();updateSettings();void persistReferences();}).catch(()=>{});
   }
   $("referenceFiles").value="";renderRefs();saveDraft();
 };
@@ -170,10 +198,10 @@ async function checkConnection(){
     const missingNodes=Object.entries(state.nodes).filter(([,ready])=>!ready).map(([name])=>name);
     if(!state.inferenceEnabled){setConnection("down",state.standbyReason);$("profileNote").textContent=state.standbyReason;return false;}
     if(!state.ready){setConnection("down",missingNodes.length?"Missing nodes: "+missingNodes.join(", "):"Qwen weights are not installed");$("profileNote").innerHTML="<strong>Qwen Image is unavailable</strong><br>Install one complete model profile before generating.";return false;}
-    setConnection("ready","Connected · "+readyProfiles.join(" + "));$("profileNote").innerHTML=$("profile").value==="bf16"?"<strong>Maximum precision</strong><br>Full BF16 weights. More model loading and memory use.":"<strong>Fast / efficient</strong><br>INT8 ConvRot reduces storage and VRAM with a possible small quality difference.";openSocket();return true;
+    setConnection("ready","Connected · "+readyProfiles.join(" + "));if($("profile").value.startsWith("turbo_")){$("profileNote").textContent="Official Turbo · 8 steps with its fixed sampling schedule. Requires a separate installed checkpoint; visual quality is unverified on this server.";openSocket();return true;}$("profileNote").innerHTML=$("profile").value==="bf16"?"<strong>Maximum precision</strong><br>Full BF16 weights. More model loading and memory use.":"<strong>Fast / efficient</strong><br>INT8 ConvRot reduces storage and VRAM with a possible small quality difference.";openSocket();return true;
   }catch(error){state.ready=false;setConnection("down",error.message);return false;}finally{setBusy(state.busy);updateSettings();}
 }
-$("retry").onclick=checkConnection;$("profile").onchange=()=>{checkConnection();saveDraft();};
+$("retry").onclick=checkConnection;$("profile").onchange=()=>{updateSettings();saveDraft();void checkConnection();};
 function openSocket(){
   if(state.socket&&state.socket.readyState<=1)return;try{state.socket=new WebSocket(wsUrl());}catch{return;}
   state.socket.onmessage=event=>{let msg;try{msg=JSON.parse(event.data);}catch{return;}handleSocket(msg);};state.socket.onclose=()=>{state.socket=null;if(state.busy)setTimeout(openSocket,1500);};
@@ -199,8 +227,17 @@ function qwenLora(settings){
   return {lora,loraStrength};
 }
 function buildGraph(settings,uploads,token){
+  const cfg=settings.cfg??(settings.negativePrompt?.trim()?2:1);
+  if(!Number.isFinite(cfg)||cfg<1||cfg>5)throw Error("Guidance must be between 1 and 5.");
+  if(settings.negativePrompt?.trim()&&cfg===1)throw Error("Negative prompt requires guidance above 1. Choose Auto or higher guidance.");
+  settings={...settings,cfg};
+  if(uploads.length>10||settings.mode==="edit"&&!uploads.length)throw Error("Edit requires 1–10 reference images.");
+  if(!["auto","gpu","cpu","off"].includes(settings.cacheDevice||"auto")||!["default","int8","int4"].includes(settings.cacheDtype||"default"))throw Error("Invalid reference cache settings.");
   settings={...settings,...qwenLora(settings)};
   if(settings.mode==="edit"&&uploads.length>1&&settings.referenceResolution>0&&(settings.referenceResolution<103||settings.referenceResolution>4096))throw Error("Additional reference detail must be 0 or 103–4096 px for this runtime.");
+  const turbo=settings.profile.startsWith("turbo_");
+  if(turbo&&(cfg!==1||settings.negativePrompt?.trim()||settings.lora))throw Error("Qwen Turbo requires guidance 1, no negative prompt and no extra LoRA.");
+  if(turbo)settings={...settings,steps:8};
   const files=profileFiles[settings.profile];if(!files)throw Error("Selected model profile is invalid.");
   const prompt=settings.transparent&&settings.mode==="create"?`This is an RGBA format image with transparency. ${settings.prompt.replace(/\.+$/,'')}. The image has an alpha channel and a transparent background.`:settings.prompt;
   const metadata={kind:"image",...settings,prompt,references:uploads.map((name,index)=>({name:settings.referenceNames?.[index]||`image${index+1}`,file:name.split(/[\\/]/).pop()})),submitted_at:Date.now()/1000,token};
@@ -208,7 +245,7 @@ function buildGraph(settings,uploads,token){
     unet:{class_type:"UNETLoader",inputs:{unet_name:files.unet,weight_dtype:"default"}},
     clip:{class_type:"CLIPLoader",inputs:{clip_name:files.clip,type:"qwen_image",device:"default"}},
     vae:{class_type:"VAELoader",inputs:{vae_name:vaeName}},
-    enc:{class_type:"TextEncodeQwenImage21",inputs:{clip:["clip",0],prompt,negative_prompt:"",resolution:settings.referenceResolution}},
+    enc:{class_type:"TextEncodeQwenImage21",inputs:{clip:["clip",0],prompt,negative_prompt:settings.negativePrompt||"",resolution:settings.referenceResolution}},
     decode:{class_type:"VAEDecode",inputs:{samples:["sampler",0],vae:["vae",0]}},
     save:{class_type:"QwenStudioSaveImage",inputs:{images:["decode",0],token,metadata_json:JSON.stringify(metadata)}}
   };
@@ -218,9 +255,16 @@ function buildGraph(settings,uploads,token){
     graph.latent={class_type:"EmptyLatentImage",inputs:{width:settings.width,height:settings.height,batch_size:1}};latent=["latent",0];
   }else{
     graph.enc.inputs.vae=["vae",0];graph.enc.inputs.resolution=0;uploads.forEach((name,index)=>{const n=index+1,id="load"+n;graph[id]={class_type:"LoadImage",inputs:{image:name}};let link=[id,0];if(n===1&&settings.customSize){graph.scale_primary={class_type:"ImageScale",inputs:{image:link,upscale_method:"lanczos",width:settings.width,height:settings.height,crop:"center"}};link=["scale_primary",0];}else if(n>1&&settings.referenceResolution>0){const scale="scale_ref"+n;graph[scale]={class_type:"ImageScaleToTotalPixels",inputs:{image:link,upscale_method:"lanczos",megapixels:settings.referenceResolution**2/1048576,resolution_steps:32}};link=[scale,0];}graph.enc.inputs["images.image_"+n]=link;});
-    graph.cache={class_type:"QwenImage21Cache",inputs:{model,device:"auto",dtype:"default"}};model=["cache",0];latent=["enc",2];
+    graph.cache={class_type:"QwenImage21Cache",inputs:{model,device:settings.cacheDevice||"auto",dtype:settings.cacheDtype||"default"}};model=["cache",0];latent=["enc",2];
   }
-  graph.sampler={class_type:"KSampler",inputs:{model,seed:settings.seed,steps:settings.steps,cfg:1,sampler_name:"euler",scheduler:"simple",positive:["enc",0],negative:["enc",1],latent_image:latent,denoise:1}};
+  graph.sampler={class_type:"KSampler",inputs:{model,seed:settings.seed,steps:settings.steps,cfg,sampler_name:"euler",scheduler:"simple",positive:["enc",0],negative:["enc",1],latent_image:latent,denoise:1}};
+  if(turbo){
+    graph.sigmas={class_type:"ManualSigmas",inputs:{sigmas:"1.0, 0.978453, 0.95418, 0.926626, 0.89508, 0.845148, 0.704534, 0.414568, 0"}};
+    graph.noise={class_type:"RandomNoise",inputs:{noise_seed:settings.seed}};
+    graph.sample_method={class_type:"KSamplerSelect",inputs:{sampler_name:"euler"}};
+    graph.guider={class_type:"CFGGuider",inputs:{model,positive:["enc",0],negative:["enc",1],cfg:1}};
+    graph.sampler={class_type:"SamplerCustomAdvanced",inputs:{noise:["noise",0],guider:["guider",0],sampler:["sample_method",0],sigmas:["sigmas",0],latent_image:latent}};
+  }
   return graph;
 }
 async function uploadOne(file,index){
@@ -257,9 +301,17 @@ function captureSettings(){
   const actualLora=state.availableLoras.find(name=>name.replaceAll('\\','/')===loraSettings.lora.replaceAll('\\','/'));
   if(loraSettings.lora&&!actualLora)throw Error("The selected LoRA is not installed. Select None or install it before generating.");
   if(actualLora)loraSettings.lora=actualLora;
+  const negativePrompt=$("negativePrompt").value.trim(),guidance=$("imageGuidance").value;
+  const cfg=guidance==="auto"?(negativePrompt?2:1):Number(guidance);
+  if(negativePrompt&&cfg===1)throw Error("Negative prompt requires guidance above 1. Choose Auto or higher guidance.");
   const prompt=resolveMentions(sourcePrompt);
+  if(state.refs.length&&!state.nodes.LoadImage)throw Error("Missing node: LoadImage. Update the server before using references.");
   $("seed").value=String(seed);saveDraft();
-  return {...loraSettings,mode,profile,prompt,sourcePrompt,referenceNames:state.refs.map(ref=>ref.name),width,height,steps,seed,transparent:mode==="create"&&$("transparent").checked,referenceResolution:Number($("referenceResolution").value),customSize:mode==="edit"&&$("customSize").checked};
+  if(profile.startsWith("turbo_")){
+    for(const name of ["ManualSigmas","KSamplerSelect","RandomNoise","CFGGuider","SamplerCustomAdvanced"])if(!state.nodes[name])throw Error("Missing Turbo node: "+name);
+    if(cfg!==1||negativePrompt||loraSettings.lora)throw Error("Qwen Turbo requires guidance 1, no negative prompt and no extra LoRA.");
+  }
+  return {...loraSettings,cfg,negativePrompt:$("negativePrompt").value.trim(),workflow:$("imageWorkflow").value,cacheDevice:$("cacheDevice").value,cacheDtype:$("cacheDtype").value,referencePlan:state.refs.map(ref=>({name:ref.name,role:ref.role||"context",instructions:ref.instructions||""})),mode,profile,prompt,sourcePrompt,referenceNames:state.refs.map(ref=>ref.name),width,height,steps:profile.startsWith("turbo_")?8:steps,seed,transparent:mode==="create"&&$("transparent").checked,referenceResolution:Number($("referenceResolution").value),customSize:mode==="edit"&&$("customSize").checked};
 }
 async function recoverPendingImage(){
   if(!state.pendingToken)return state.activePromptId;
@@ -372,6 +424,24 @@ async function completeGeneration(file){
 }
 function imageUrl(entry){return api("/h3_studio/image_file?"+new URLSearchParams({filename:entry.filename,_time:String(entry.modified||Date.now())}));}
 function showImage(entry){state.current=entry;const image=document.createElement("img");image.src=imageUrl(entry);image.alt="Generated Qwen image";$("stage").replaceChildren(image);$("currentActions").classList.remove("hidden");}
+async function useCurrentImage(replace){
+  if(state.busy||!state.referencesReady||!state.current)return;
+  if(!replace&&state.refs.length>=10){showError('Remove a reference before adding another image.');return;}
+  const current=state.current;
+  const epoch=state.generationEpoch;
+  try{
+    const response=await fetch(imageUrl(current));if(!response.ok)throw Error('Could not load the selected image.');
+    const file=new File([await response.blob()],current.filename,{type:'image/png'});
+    const bitmap=await createImageBitmap(file);const width=bitmap.width,height=bitmap.height;bitmap.close();
+    if(state.busy||epoch!==state.generationEpoch||!state.referencesReady)return;
+    if(!replace&&state.refs.length>=10)throw Error('Remove a reference before adding another image.');
+    if(replace){for(const ref of state.refs)URL.revokeObjectURL(ref.url);state.refs=[];$('prompt').value='';$('imageWorkflow').value='general';$('customSize').checked=false;}
+    state.refs.push({id:crypto.randomUUID(),file,url:URL.createObjectURL(file),name:suggestedName(file),role:'context',instructions:'',width,height});
+    renderRefs();saveDraft();showError('');
+  }catch(error){showError(error.message);}
+}
+$('editCurrent').onclick=()=>useCurrentImage(true);
+$('addCurrentReference').onclick=()=>useCurrentImage(false);
 async function loadLibrary(force=false){
   try{const response=await fetch(api("/h3_studio/image_library"),{cache:"no-store"});if(!response.ok)throw Error();state.results=(await H3RenderValues.readJson(response)).items||[];renderLibrary();}catch{if(force)showError("Could not refresh the generated image library.");}
 }
@@ -379,7 +449,7 @@ function renderLibrary(){
   $("results").replaceChildren();$("imageCount").textContent=`(${state.results.length} on server)`;$("emptyHistory").classList.toggle("hidden",!!state.results.length);const remaining=Math.max(0,state.results.length-state.visible);$("showMore").classList.toggle("hidden",!remaining);$("showMore").textContent=`Show ${Math.min(8,remaining)} more · ${remaining} remaining`;
   state.results.slice(0,state.visible).forEach((entry,index)=>{const card=document.createElement("div");card.className="result";const open=document.createElement("button");open.className="result-open";open.type="button";const media=document.createElement("div");media.className="result-media";const image=document.createElement("img");image.src=imageUrl(entry);image.loading="lazy";image.alt=`Generated image ${index+1}`;media.append(image);const label=document.createElement("div");label.className="result-label";label.textContent=`${entry.width} × ${entry.height} · ${(entry.settings?.profile||"Qwen").toUpperCase()}`;const small=document.createElement("small");small.textContent=new Date(entry.modified*1000).toLocaleString()+(entry.render_seconds?" · "+fmt(entry.render_seconds):"");label.append(small);open.append(media,label);open.onclick=()=>showImage(entry);const actions=document.createElement("div");actions.className="result-card-actions";const details=document.createElement("button");details.type="button";details.textContent="Details";details.onclick=()=>openDetails(entry,details);const remove=document.createElement("button");remove.type="button";remove.textContent="Delete";remove.setAttribute("aria-label",`Delete generated image ${index+1}`);remove.onclick=()=>deleteEntry(entry);const download=document.createElement("button");download.type="button";download.textContent="Download";download.setAttribute("aria-label",`Download generated image ${index+1}`);download.onclick=()=>downloadImageEntry(entry);actions.append(download,details,remove);card.append(open,actions);$("results").append(card);});
 }
-function openDetails(entry,trigger){const data=entry.settings||{};const content=$("detailsContent");content.replaceChildren();const grid=document.createElement("dl");grid.className="settings";const row=(key,value)=>{const dt=document.createElement("dt"),dd=document.createElement("dd");dt.textContent=key;dd.textContent=value===undefined||value===null||value===""?"—":String(value);grid.append(dt,dd);};row("Inputs",data.mode==="edit"?"Prompt + references":"Prompt only");row("Precision",data.profile?.toUpperCase());row("Canvas",`${entry.width||data.width} × ${entry.height||data.height}`);row("LoRA",data.lora||"None");row("LoRA strength",data.lora?data.loraStrength:"—");row("Steps",data.steps);row("Seed",data.seed);row("Transparent",data.transparent?"Yes":"No");row("References",Array.isArray(data.referenceNames)?data.referenceNames.map((name,index)=>`@${name} → image${index+1}`).join(", "):Array.isArray(data.references)?data.references.length:0);row("Render time",entry.render_seconds?fmt(entry.render_seconds):"—");row("Prompt",data.sourcePrompt||data.prompt);content.append(grid);$("detailsDialog").showModal();$("detailsDialog").dataset.returnId=trigger?.id||"";}
+function openDetails(entry,trigger){const data=entry.settings||{};const content=$("detailsContent");content.replaceChildren();const grid=document.createElement("dl");grid.className="settings";const row=(key,value)=>{const dt=document.createElement("dt"),dd=document.createElement("dd");dt.textContent=key;dd.textContent=value===undefined||value===null||value===""?"—":String(value);grid.append(dt,dd);};row("Inputs",data.mode==="edit"?"Prompt + references":"Prompt only");row("Precision",data.profile?.toUpperCase());row("Canvas",`${entry.width||data.width} × ${entry.height||data.height}`);row("LoRA",data.lora||"None");row("LoRA strength",data.lora?data.loraStrength:"—");row("Steps",data.steps);row("Seed",data.seed);row("Transparent",data.transparent?"Yes":"No");row("References",Array.isArray(data.referenceNames)?data.referenceNames.map((name,index)=>`@${name} → image${index+1}`).join(", "):Array.isArray(data.references)?data.references.length:0);row("Render time",entry.render_seconds?fmt(entry.render_seconds):"—");row("Workflow",data.workflow||"general");row("Reference roles",JSON.stringify(data.referencePlan||[]));row("Guidance",data.cfg??1);row("Negative prompt",data.negativePrompt||data.negative_prompt);row("Cache",(data.cacheDevice||data.cache_device||"auto")+" / "+(data.cacheDtype||data.cache_dtype||"default"));row("Prompt",data.sourcePrompt||data.prompt);row("Resolved prompt",data.prompt);content.append(grid);$("detailsDialog").showModal();$("detailsDialog").dataset.returnId=trigger?.id||"";}
 $("closeDetails").onclick=()=>$("detailsDialog").close();$("detailsDialog").onclick=event=>{if(event.target===$("detailsDialog"))$("detailsDialog").close();};
 $("details").onclick=event=>state.current&&openDetails(state.current,event.currentTarget);
 function downloadImageEntry(entry){if(!entry)return;const a=document.createElement("a");a.href=imageUrl(entry);a.download=entry.filename;document.body.append(a);a.click();a.remove();}
@@ -411,7 +481,7 @@ if($("sendToH3")) $("sendToH3").onclick = async () => {
 };
 $("deleteCurrent").onclick=()=>deleteEntry(state.current);$("refreshLibrary").onclick=()=>loadLibrary(true);$("showMore").onclick=()=>{state.visible+=8;renderLibrary();};
 $("randomSeed").onclick=()=>{$("seed").value=H3RenderValues.randomSeed();saveDraft();};
-for(const id of ["prompt","aspect","resolution","steps","seed","transparent","referenceResolution","customSize","fitReferences","lora","loraStrength"]){$(id).addEventListener("input",()=>{if(id==="aspect"||id==="resolution")$("customSize").checked=true;updateSettings();saveDraft();if(id==="prompt")renderMentions();});}
+for(const id of [...imageExtraControls,"prompt","aspect","resolution","steps","seed","transparent","referenceResolution","customSize","fitReferences","lora","loraStrength"]){$(id).addEventListener("input",()=>{if(id==="aspect"||id==="resolution")$("customSize").checked=true;updateSettings();saveDraft();if(id==="prompt")renderMentions();refreshPromptPreview();});}
 window.addEventListener("focus",()=>loadLibrary(false));
 state.timer=setInterval(()=>{if(state.busy&&state.started){const elapsed=(Date.now()-state.started)/1000;$("timer").textContent="Elapsed: "+fmt(elapsed);if(!state.lastStepAt)$("remaining").textContent="Time remaining: "+fmt(Math.max(0,estimateSeconds()-elapsed));}},1000);
 async function resume(){if(!state.activePromptId)return;let job={};try{job=JSON.parse(sessionStorage.getItem("qwen.activeJob")||"{}");}catch{}if(job.promptId===state.activePromptId){state.settings=job.settings||null;const observation=job.completionObservation;if(observation?.id===state.activePromptId&&Number.isFinite(observation.elapsed)&&observation.elapsed>=0&&Number.isFinite(observation.modified)){state.completionObservation={...observation,previewShown:false};}state.pendingToken=job.pendingToken||null;state.started=Number(job.started)||Date.now();state.uploaded=Array.isArray(job.uploaded)?job.uploaded:[];state.lastStep=Number(job.lastStep)||0;state.stepTotal=Number(job.stepTotal)||0;state.stepTimes=Array.isArray(job.stepTimes)?job.stepTimes:[];}else{state.started=Date.now();}setBusy(true);setProgress("Restoring active generation",5,null,true);if(state.lastStep&&state.stepTotal)setProgress(`Sampling · ${state.lastStep}/${state.stepTotal}`,12+Math.round(78*state.lastStep/state.stepTotal),null);openSocket();pollQueue();pollHistory(false);}
@@ -429,7 +499,7 @@ async function initialize(){
     state.refsSaved=true;
     state.referencesReady=true;
     $("addReferences").disabled=false;
-    referenceSignature=JSON.stringify(state.refs.map(ref=>[ref.id,ref.name,ref.width,ref.height]));
+    referenceSignature=JSON.stringify(state.refs.map(ref=>[ref.id,ref.name,ref.width,ref.height,ref.role,ref.instructions]));
   }catch(error){
     showError('Saved references could not be restored. Reload to retry, or continue for this session: '+error.message);
     const continueButton=document.createElement('button');continueButton.type='button';continueButton.className='button alt small';
@@ -446,15 +516,16 @@ clearImageSetup.onclick=async()=>{
  if(state.busy||state.refsSaving||!state.referencesReady)return;
  if(!confirm('Clear this tab’s image inputs and settings? Generated images remain.'))return;
  for(const ref of state.refs)URL.revokeObjectURL(ref.url);state.refs=[];
- for(const id of ['prompt','steps','seed','loraStrength'])$(id).value=$(id).defaultValue;
- for(const id of ['profile','aspect','resolution','referenceResolution','lora']){const el=$(id);el.value=[...el.options].find(o=>o.defaultSelected)?.value||el.options[0]?.value;}
+ for(const id of ['prompt','negativePrompt','steps','seed','loraStrength'])$(id).value=$(id).defaultValue;
+ for(const id of ['profile','aspect','resolution','referenceResolution','lora','imageWorkflow','imageGuidance','cacheDevice','cacheDtype']){const el=$(id);el.value=[...el.options].find(o=>o.defaultSelected)?.value||el.options[0]?.value;}
  $('transparent').checked=false;$('customSize').checked=false;$('fitReferences').checked=true;
+ state.baselineSteps='40';state.turboControls=false;
  renderRefs();saveDraft();await referenceWrite;updateSettings();
 };
 addEventListener('beforeunload',event=>{saveDraft();if(state.refsSaving){event.preventDefault();event.returnValue='';}});
 
 setInterval(()=>{
  if(!state.referencesReady||state.referencesSessionOnly||state.refsSaving||!state.refs.length)return;
- const snapshot=state.refs.map(ref=>({id:ref.id,file:ref.file,name:ref.name,width:ref.width,height:ref.height}));
+ const snapshot=state.refs.map(ref=>({id:ref.id,file:ref.file,name:ref.name,width:ref.width,height:ref.height,role:ref.role||"context",instructions:ref.instructions||""}));
  referenceWrite=referenceWrite.then(()=>QwenReferenceStore.save(snapshot)).catch(error=>{showError('Saved reference storage needs attention: '+error.message);});
 },60000);

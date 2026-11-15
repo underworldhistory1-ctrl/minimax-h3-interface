@@ -1,0 +1,80 @@
+const {chromium}=require(process.env.H3_TEST_PLAYWRIGHT||'playwright');
+const {spawn}=require('node:child_process');
+const assert=require('node:assert/strict');
+const path=require('node:path');
+(async()=>{
+ const base='http://127.0.0.1:18779';
+ const server=spawn(process.env.H3_TEST_PYTHON||'python',[path.join(__dirname,'cpu_fixture.py'),'18779'],{stdio:['ignore','pipe','pipe'],windowsHide:true});
+ let browser,page,stderr='';server.stderr.on('data',chunk=>stderr+=chunk);
+ try{
+  for(let i=0;i<100;i++){try{await fetch(base+'/system_stats');break;}catch{await new Promise(r=>setTimeout(r,100));}}
+  browser=await chromium.launch({headless:true});page=await browser.newPage({viewport:{width:1440,height:1100}});
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.goto(base+'/extensions/h3_studio/image.html');await page.waitForFunction(()=>state.ready&&state.referencesReady);
+  const png=await page.evaluate(()=>{const c=document.createElement('canvas');c.width=640;c.height=384;return c.toDataURL().split(',')[1];});
+  await page.locator('#referenceFiles').setInputFiles(Array.from({length:10},(_,i)=>({name:`source${i+1}.png`,mimeType:'image/png',buffer:Buffer.from(png,'base64')})));
+  await page.waitForFunction(()=>state.refs.length===10&&state.refs.every(ref=>ref.width===640));
+  await page.getByLabel('Role for image 1',{exact:true}).selectOption('identity');
+  await page.getByLabel('Role for image 2',{exact:true}).selectOption('background');
+  await page.getByLabel('Instructions for image 2',{exact:true}).fill('Keep @source1 face; use only the room.');
+  await page.locator('#imageWorkflow').selectOption('combine');
+  await page.locator('#negativePrompt').fill('watermark, guide markings');
+  await page.locator('#cacheDevice').selectOption('cpu');await page.locator('#cacheDtype').selectOption('int8');
+  await page.locator('#prompt').fill('Put @source1 in @source2, with an object from @source10.');
+  await page.getByLabel('Mention name for image 1',{exact:true}).fill('person');
+  assert.match(await page.getByLabel('Instructions for image 2',{exact:true}).inputValue(),/@person/);
+  // Native tokens follow the same source across reorder and refresh.
+  await page.locator('#prompt').fill('Keep @person and <image10> in @source2.');
+  await page.evaluate(()=>moveReference(9,-1));
+  assert.match(await page.locator('#prompt').inputValue(),/<image9>/);
+  await page.evaluate(()=>QwenTabState.prepareReload());await page.reload();await page.waitForFunction(()=>state.ready&&state.referencesReady&&state.refs.length===10);
+  assert.equal(await page.getByLabel('Role for image 1',{exact:true}).inputValue(),'identity');
+  assert.equal(await page.getByLabel('Role for image 2',{exact:true}).inputValue(),'background');
+  assert.equal(await page.locator('#imageWorkflow').inputValue(),'combine');
+  assert.match(await page.getByLabel('Instructions for image 2',{exact:true}).inputValue(),/@person/);
+  await page.locator('#generate').click();await page.waitForFunction(()=>state.activePromptId&&!state.pendingToken);
+  const captured=await(await fetch(base+'/__captured')).json(),g=captured[0].prompt;
+  assert.equal(Object.keys(g.enc.inputs).filter(k=>k.startsWith('images.image_')).length,10);
+  assert.equal(new Set(Array.from({length:10},(_,i)=>g['load'+(i+1)].inputs.image)).size,10);
+  assert.match(g.enc.inputs.prompt,/Keep <image1> and <image9> in <image2>/);
+  assert.match(g.enc.inputs.prompt,/Use the location and environment/);
+  assert.match(g.enc.inputs.prompt,/Keep <image1> face/);
+  assert.equal(g.enc.inputs.negative_prompt,'watermark, guide markings');assert.equal(g.sampler.inputs.cfg,2);
+  assert.equal(g.cache.inputs.device,'cpu');assert.equal(g.cache.inputs.dtype,'int8');
+  const metadata=JSON.parse(g.save.inputs.metadata_json);assert.equal(metadata.referencePlan.length,10);
+  await page.locator('#cancel').click();await page.waitForFunction(()=>!state.busy);
+  await page.locator('#referenceList .ref').nth(8).getByRole('button',{name:'Remove',exact:true}).click();
+  assert.match(await page.locator('#prompt').inputValue(),/@source10/);
+  await page.locator('#generate').click();await page.waitForFunction(()=>document.querySelector('#error').textContent.includes('@source10 has no attached'));
+  assert.equal((await(await fetch(base+'/__captured')).json()).length,1);
+  await page.evaluate(()=>showImage({filename:'qwen_studio_fixture.png',width:1280,height:704}));
+  await page.locator('#editCurrent').click();await page.waitForFunction(()=>state.refs.length===1&&state.refs[0].width===1280);
+  await page.locator('#addCurrentReference').click();await page.waitForFunction(()=>state.refs.length===2);
+  await page.route('**/h3_studio/image_readiness',async route=>{
+    const response=await route.fetch(),data=await response.json();
+    data.profiles.turbo_int8={ready:true};
+    for(const name of ['ManualSigmas','KSamplerSelect','RandomNoise','CFGGuider','SamplerCustomAdvanced'])data.nodes[name]=true;
+    await route.fulfill({json:data});
+  });
+  await page.locator('#retry').click();await page.waitForFunction(()=>state.profiles.turbo_int8?.ready);
+  await page.locator('#steps').fill('37');await page.locator('#profile').selectOption('turbo_int8');
+  assert.equal(await page.locator('#steps').inputValue(),'8');assert.equal(await page.locator('#steps').isDisabled(),true);
+  await page.locator('#profile').selectOption('int8');assert.equal(await page.locator('#steps').inputValue(),'37');
+  await page.locator('#profile').selectOption('turbo_int8');
+  await page.evaluate(()=>QwenTabState.prepareReload());await page.reload();await page.waitForFunction(()=>state.ready&&state.referencesReady);
+  await page.locator('#profile').selectOption('int8');assert.equal(await page.locator('#steps').inputValue(),'37');
+  await page.locator('#profile').selectOption('turbo_int8');await page.locator('#negativePrompt').fill('');
+  await page.locator('#prompt').fill('Relight the base image.');
+  await page.locator('#generate').click();await page.waitForFunction(()=>state.activePromptId&&!state.pendingToken);
+  const turbo=(await(await fetch(base+'/__captured')).json())[1].prompt;
+  assert.equal(turbo.sampler.class_type,'SamplerCustomAdvanced');assert.equal(turbo.guider.inputs.cfg,1);
+  assert.equal(turbo.sigmas.inputs.sigmas.split(',').length,9);
+  assert.match(turbo.unet.inputs.unet_name,/turbo_int8/);
+  assert.equal(JSON.parse(turbo.save.inputs.metadata_json).steps,8);
+  await page.locator('#cancel').click();await page.waitForFunction(()=>!state.busy);
+  assert.deepEqual(errors,[]);
+  if(process.env.H3_TEST_IMAGE_SCREENSHOT)await page.screenshot({path:process.env.H3_TEST_IMAGE_SCREENSHOT,fullPage:true});
+  console.log(JSON.stringify({passed:true,checks:['10 distinct uploads connected','roles and task compiled','rename and reorder preserve source identity','roles and instructions survive refresh','negative prompt and cache reach graph','removed native token blocks stale source','result edit and reference loop','official Turbo graph and baseline step preservation through refresh'],errors},null,2));
+ }catch(error){console.error(error.stack);console.error(stderr);if(page)console.error(await page.locator('#error').textContent());process.exitCode=1;}
+ finally{if(browser)await browser.close();server.kill();}
+})();

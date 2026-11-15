@@ -45,3 +45,10 @@ test('fitted canvas includes integer thumbnail rounding before encoder rounding'
  vm.runInContext(source.slice(source.indexOf('function outputDimensions('),source.indexOf('function estimateSeconds(')),ctx);
  assert.deepEqual(Array.from(ctx.outputDimensions()),[2048,448]);
 });
+
+test('negative conditioning uses guidance above one and preserves baseline otherwise',()=>{
+ const baseGraph=context.buildGraph(base,[],'test');assert.equal(baseGraph.sampler.inputs.cfg,1);
+ const graph=context.buildGraph({...base,negativePrompt:'watermark'},[],'test');assert.equal(graph.sampler.inputs.cfg,2);assert.equal(graph.enc.inputs.negative_prompt,'watermark');
+ assert.throws(()=>context.buildGraph({...base,negativePrompt:'watermark',cfg:1},[],'test'),/above 1/);
+ for(const cfg of [NaN,Infinity,0,6])assert.throws(()=>context.buildGraph({...base,cfg},[],'test'),/Guidance/);
+});
