@@ -83,6 +83,8 @@ body[data-workspace-view=elements] .workspace-page,body[data-workspace-view=gene
 /* Shared video/image header tools and frosted update sheet. */
 .top{background:rgba(20,22,20,.82);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);box-shadow:inset 0 -1px 0 rgba(255,255,255,.025)}
 .h3-header-tools{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+.measured-timings{margin:10px 0;padding:10px;border:1px solid var(--line,#393939);border-radius:9px;min-width:0}.measured-timings summary{cursor:pointer;font-weight:600}.measured-timings input{margin-top:10px;width:100%;box-sizing:border-box}.measured-timings ul{list-style:none;padding:0;margin:8px 0;display:grid;gap:7px}.measured-timings li{display:grid;gap:4px;padding:8px;border-radius:6px;background:rgba(255,255,255,.03);font-size:12px;overflow-wrap:anywhere;min-width:0}.measured-timings li strong{font-weight:500}.measured-timings li span{color:var(--acid,#d6ff20)}.measured-timings li.selected{outline:1px solid var(--acid,#d6ff20)}
+@media(max-width:720px){.h3-discussions-link span{display:none}.h3-discussions-link{min-width:34px}}
 .h3-header-tools .button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:34px;padding:6px 11px;line-height:1.3;font-size:12px;white-space:nowrap;text-decoration:none;border-radius:9px}
 .h3-header-tools .button.alt{color:var(--text);background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.13);box-shadow:inset 0 1px 0 rgba(255,255,255,.045)}
 .h3-header-tools .button:hover{background:rgba(255,255,255,.09);border-color:rgba(214,255,32,.42)}

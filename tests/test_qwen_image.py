@@ -5,6 +5,30 @@ from unittest.mock import patch
 
 
 class QwenImageContractTests(unittest.TestCase):
+    def test_completed_timing_survives_sidecar_update_and_library_reload(self):
+        import json
+        from PIL import Image
+        qwen = self.module()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'qwen_studio_timing_00000.png'
+            Image.new('RGB', (32, 32)).save(path)
+            path.with_suffix('.json').write_text(json.dumps({'timingConfiguration': {'kind': 'qwen', 'gpu': 'RTX 5090'}}))
+            timing = {'source': 'execution', 'seconds': 10, 'started': 1000, 'finished': 11000, 'unexpected': 'not retained'}
+            self.assertTrue(qwen.update_image_details(tmp, path.name, {'render_seconds': 10, 'settings': {'timingMeasurement': timing}}))
+            settings = qwen.scan_image_library(tmp)[0]['settings']
+            self.assertEqual(settings['timingConfiguration']['gpu'], 'RTX 5090')
+            self.assertEqual(settings['timingMeasurement'], {k: timing[k] for k in ('source', 'seconds', 'started', 'finished')})
+
+    def test_invalid_measurements_cannot_train_image_estimates(self):
+        import json
+        qwen = self.module()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'qwen_studio_timing_00000.png'
+            path.touch()
+            for timing in ({'source': 'execution', 'seconds': 10}, {'source': 'execution', 'seconds': 10, 'started': 1, 'finished': 2}, {'source': 'browser', 'seconds': float('nan')}, {'source': 'other', 'seconds': 10}):
+                path.with_suffix('.json').write_text('{}')
+                qwen.update_image_details(tmp, path.name, {'settings': {'timingMeasurement': timing}})
+                self.assertNotIn('timingMeasurement', json.loads(path.with_suffix('.json').read_text()))
     def test_all_ten_images_negative_prompt_and_cache_are_connected(self):
         graph = self.module().build_qwen_graph({"mode": "edit", "prompt": "Combine <image1> with <image10>",
             "negative_prompt": "watermark", "cache_device": "cpu", "cache_dtype": "int8"},

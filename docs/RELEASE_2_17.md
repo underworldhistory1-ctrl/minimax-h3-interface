@@ -1,6 +1,10 @@
-# 2.17.2 — Qwen reference workspace and runtime diagnostics
+# 2.17.3 — Qwen references, runtime diagnostics and measured setups
 
 This release updates the existing Create Image workspace and retains the baseline H3/video paths. [Controls and limits](QWEN_REFERENCE_WORKSPACE.md) describes reference semantics, persistence, optional Turbo and upstream sources.
+
+## 2.17.3 measured setups and Discussions
+
+Both workspaces expose searchable measured setup histories and a header Discussions link. Qwen persists validated execution timings with full GPU/runtime/settings keys; unmeasured configurations remain explicit. Video timing also records runtime memory policy and labels similar observations. [Measured timings](MEASURED_TIMINGS.md) explains calibration and historical-data limits. No model, attention or sampling changes are introduced. Verification covers JavaScript regressions, real image-sidecar round trips, malformed timing metadata, browser learning/search/link checks, mobile layout and cross-platform CI; inference is simulated in browser fixtures.
 
 ## 2.17.2 performance follow-up
 

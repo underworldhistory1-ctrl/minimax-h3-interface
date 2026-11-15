@@ -3,6 +3,43 @@ const assert=require('node:assert/strict');
 const E=require('../../web/h3/timing-estimator.js');
 const config=()=>({version:2,gpu:'RTX 5090',model:'FL2VA',mode:'text',method:'native',width:1280,height:704,frames:362,steps:20,adapters:[],references:[],guides:[],passes:[],control:null,continuation:null});
 const sample=(configuration,seconds=120,filename='h3_studio_a.mp4',source='execution')=>({configuration,seconds,filename,source});
+
+test('runtime changes isolate measured video times',()=>{
+ const c={...config(),runtime:{torch:'2.11',memory:{dynamic_vram_enabled:true}}};
+ assert.equal(E.estimate({...c,runtime:{torch:'2.11',memory:{dynamic_vram_enabled:false}}},[sample(c)]).seconds,null);
+});
+test('measured setup groups retain separate canvas and step observations',()=>{
+ const c=config(),d={...c,width:864,height:480,steps:8};
+ const groups=E.groups([sample(c,100,'a'),sample(c,120,'b'),sample(d,35,'c'),sample(c,999,'d','browser')]);
+ assert.equal(groups.length,2);assert.equal(groups[0].seconds,110);assert.equal(groups[0].count,2);assert.equal(groups[1].seconds,35);
+});
+const imageConfig=()=>E.imageConfiguration({mode:'create',profile:'int8',width:1024,height:1024,steps:40,cfg:1},[],{gpu:'RTX 5090',attention:'CK'});
+test('image timing separates GPU adapters precision references and cache settings',()=>{
+ const c=imageConfig(),samples=[sample(c,31,'a')];
+ assert.equal(E.imageEstimate(c,samples).seconds,31);
+ for(const patch of [{runtime:{gpu:'RTX 4090'}},{profile:'bf16'},{steps:8},{cfg:2},{lora:'adapter',loraStrength:1},{cacheDevice:'cpu'},{fitReferences:false},{references:[{width:1024,height:1024,bytes:12}]}])assert.equal(E.imageEstimate({...c,...patch},samples).seconds,null);
+});
+test('image medians use fresh execution events and deduplicate files',()=>{
+ const c=imageConfig(),r=E.imageEstimate(c,[sample(c,20,'a'),sample(c,40,'b'),sample(c,40,'b'),sample(c,900,'c','browser'),sample(c,NaN,'d')]);
+ assert.equal(r.seconds,30);assert.equal(r.count,2);assert.equal(r.low,20);assert.equal(r.high,40);
+ assert.equal(E.imageEstimate({...c,gpu:'unknown'},[sample(c)]).seconds,null);
+});
+test('malformed persisted image configurations cannot break timing history',()=>{
+ const c=imageConfig();
+ for(const patch of [{profile:{}},{mode:[]},{lora:{}},{cacheDevice:{}},{references:[{}]}]){
+  assert.deepEqual(E.groups([sample({...c,...patch},10)],true),[]);
+  assert.equal(E.imageEstimate({...c,...patch},[sample(c)]).seconds,null);
+ }
+});
+test('timing configuration omits prompts names and random seeds',()=>{
+ const s={mode:'create',profile:'int8',width:1024,height:1024,steps:40,prompt:'PRIVATE',sourcePrompt:'PRIVATE',seed:42};
+ const c=E.imageConfiguration(s,[{name:'PRIVATE',file:{size:4},width:1024,height:1024}],{gpu:'RTX 5090'});
+ assert.doesNotMatch(JSON.stringify(c),/PRIVATE|seed/);assert.equal(c.references.length,1);
+});
+test('fully cached samplers do not train generation-time estimates',()=>{
+ const job={prompt:[0,'id',{sampler:{class_type:'KSampler'}}],status:{messages:[['execution_start',{timestamp:1000}],['execution_cached',{nodes:['sampler']}],['execution_success',{timestamp:1200}]]}};
+ assert.equal(E.measured(job),null);job.status.messages.splice(1,1);assert.equal(E.measured(job).seconds,.2);
+});
 test('exact settings return actual seconds and observed dispersion',()=>{
  const c=config(),r=E.estimate(c,[sample(c,100,'a'),sample(c,120,'b'),sample(c,160,'c')]);
  assert.equal(r.seconds,120);assert.equal(r.low,100);assert.equal(r.high,160);assert.equal(r.kind,'exact');

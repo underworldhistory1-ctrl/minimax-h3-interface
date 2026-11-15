@@ -25,6 +25,13 @@ const path=require('node:path');
   assert.deepEqual(errors,[],'Boot JS errors');
   assert.ok((await page.title()).includes('H3 Interface'));
   assert.match(await page.locator('.brand-name').textContent(),/H3 Interface/);
+  assert.equal(await page.locator('#h3DiscussionsLink').getAttribute('href'),'https://github.com/underworldhistory1-ctrl/minimax-h3-interface/discussions');
+  await page.evaluate(()=>{const c=timingConfiguration();state.historySamples=[{filename:'measured-fixture.mp4',configuration:c,seconds:77,source:'execution'}];renderEstimates();});
+  await page.locator('#measuredTimings').evaluate(e=>e.open=true);
+  assert.match(await page.locator('#measuredTimings').textContent(),/1m 17s observed/);
+  await page.locator('#measuredTimings input').fill('no-such-setup');assert.match(await page.locator('#measuredTimings').textContent(),/No matching/);
+  await page.locator('#measuredTimings input').fill('');
+  await page.evaluate(()=>{state.historySamples=[];renderEstimates();});
   // A delayed terminal response from the previous run must not drain new uploads.
   let releaseOldPoll;const oldPollGate=new Promise(resolve=>releaseOldPoll=resolve);
   let oldPollReached;const oldPollSeen=new Promise(resolve=>oldPollReached=resolve);

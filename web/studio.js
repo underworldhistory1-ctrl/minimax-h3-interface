@@ -344,7 +344,7 @@ function timingConfiguration(w=state.width,h=state.height){
   const adapters=state.loras.filter(x=>x.enabled).map(x=>({name:x.name,strength:x.strength,
     refinement_strength:refine?(x.refinement_strength??(/Motion_Repair_V2/i.test(x.name)?.25:x.strength)):null}));
   if(turboMethod())adapters.push({name:method()==="turbo_ref"?H3Configuration.TURBO_REF:turboName,strength:1,refinement_strength:null});
-  return {version:2,gpu:state.gpu,attention_backend:state.labCapabilities?.server_attention?.implementation||"unrecorded",model:selectedCheckpoint(),sampling:turboMethod()?{...state.sampling,sampler_name:method()==="turbo_ref"?"euler":"h3_turbo",scheduler:"simple",cfg:1,denoise:1,shift_video:12,shift_audio:3}:state.sampling||{},audio_refinement:state.audioRefinement||{},model_profile:state.modelProfile||"original",hybrid_preset:state.hybridPreset||"none",node_options:state.nodeOptions||{},mode:state.mode,method:method(),
+  return {version:2,gpu:state.gpu,runtime:state.timingRuntime||null,attention_backend:state.labCapabilities?.server_attention?.implementation||"unrecorded",model:selectedCheckpoint(),sampling:turboMethod()?{...state.sampling,sampler_name:method()==="turbo_ref"?"euler":"h3_turbo",scheduler:"simple",cfg:1,denoise:1,shift_video:12,shift_audio:3}:state.sampling||{},audio_refinement:state.audioRefinement||{},model_profile:state.modelProfile||"original",hybrid_preset:state.hybridPreset||"none",node_options:state.nodeOptions||{},mode:state.mode,method:method(),
     width:canvas.width,height:canvas.height,...(newPreset?{output_canvas:{width:w,height:h},sampling_canvas:{width:canvas.width,height:canvas.height}}:{}),frames:Number($("duration").value),steps:Number($("steps").value),fps:24,adapters,...((state.dials||[]).some(d=>d.enabled)?{dials:state.dials.filter(d=>d.enabled)}:{}),
     sampler:selectedPika()?"euler":method()==="turbo_ref"?"euler":method()==="turbo"?"h3_turbo":"res_multistep",scheduler:"simple",cfg:1,denoise:1,
     references:state.mode==="refs"?orderedRefs().map(timingMedia):state.mode==="frames"?[state.first,state.last].map(x=>x?timingMedia(x):null):[],
@@ -377,7 +377,7 @@ function captureSettings(){
 }
 function estimateFor(w=state.width,h=state.height){return H3TimingEstimator.estimate(timingConfiguration(w,h),allSamples());}
 function estimateMidpoint(){return state.estimated?.seconds??null;}
-function estimateText(est){return est.seconds===null?"No measured estimate":est.count===1?fmt(est.seconds)+" observed":fmt(est.low)+" – "+fmt(est.high);}
+function estimateText(est){return est.seconds===null?"No measured estimate":(est.kind==='similar'?'Similar setup: ':'')+(est.count===1?fmt(est.seconds)+" observed":fmt(est.low)+" – "+fmt(est.high));}
 function currentAspectFormat() {
   for(const [fmt, list] of Object.entries(aspectPresets)) {
     if(list.some(([w,h]) => w===state.width && h===state.height)) return fmt;
@@ -423,6 +423,11 @@ function renderEstimates() {
     wrap.append(b);
   });
   state.estimated = estimateFor();
+  let history=$('measuredTimings');if(!history){history=document.createElement('details');history.id='measuredTimings';wrap.after(history);}
+  const current=timingConfiguration();
+  H3TimingEstimator.renderHistory(history,H3TimingEstimator.groups(allSamples()).filter(g=>g.configuration.gpu===current.gpu&&g.configuration.attention_backend===current.attention_backend&&H3TimingEstimator.signature(g.configuration.runtime)===H3TimingEstimator.signature(current.runtime)),current,fmt);
+  let selected=$('selectedSetupTiming');if(!selected){selected=document.createElement('div');selected.id='selectedSetupTiming';selected.className='tip';selected.setAttribute('role','status');$('renderMethod').after(selected);}
+  selected.textContent='This setup: '+estimateText(state.estimated);
   $("estimateNote").textContent = "Estimated " + sizeKey() + ": " + estimateText(state.estimated);
   $("estimateBasis").textContent = state.estimated.basis + ". Execution time includes model load, video and audio; queue/upload time is separate.";
   const canvas=samplingCanvas();
@@ -641,13 +646,14 @@ function attachReferenceSorting(){
   H3Drag.attach(container,{selector:'.reference-unit',handle:'.ref-block-handle',locked,onCommit:commit,onCancel:renderRefs});
 }
 function renderRefs() {
+  for(const card of $('refs').querySelectorAll('details.ref'))if(card._reference)card._reference.expanded=card.open;
   state.refs=orderedRefs();
   const locked=state.busy||state.projectLoading||(typeof referenceMutationLocked==='function'&&referenceMutationLocked());
   H3ReferenceControls.cleanup($("refs"));
   $("refs").replaceChildren();
   state.refs.forEach((ref,index) => {
     if(ref.restoreError){const missing=missingInputCard(ref,()=>state.refs.splice(index,1));missing.dataset.referenceIndex=String(index);missing.classList.add('reference-unit');$("refs").append(missing);return;}
-    const card=document.createElement("details");card.className="ref compact-ref";card.open=!!ref.expanded;card.ontoggle=()=>{ref.expanded=card.open;if(card.open){const large=card.querySelector(".ref-expanded-preview");if(large&&!large.src)large.src=ref.previewUrl;}};
+    const card=document.createElement("details");card.className="ref compact-ref";card._reference=ref;card.open=!!ref.expanded;card.ontoggle=()=>{if(!card.isConnected)return;ref.expanded=card.open;if(card.open){const large=card.querySelector(".ref-expanded-preview");if(large&&!large.src)large.src=ref.previewUrl;}};
     card.dataset.referenceIndex=String(index);const head=document.createElement("summary");head.className="refhead";
     const icon=document.createElement("div");icon.className="icon";
     if(ref.previewUrl&&(ref.kind==="image"||ref.kind==="video")){
@@ -1289,6 +1295,7 @@ async function checkConnection() {
       if(!stats.ok)throw Error("ComfyUI is not responding.");
       if(!readiness.ok)throw Error("Install or update H3 Interface on this server.");
       const data=await stats.json(),ready=await readiness.json();
+      state.timingRuntime=H3TimingEstimator.runtimeContext(data,ready);
       state.modelsReady=ready.models||{};
       state.nodesReady=ready.nodes||null;
       await refreshLabCapabilities();
@@ -2389,4 +2396,4 @@ pollQueue();
 state.projectLoading=true;refreshLabControls();
 addEventListener('DOMContentLoaded',()=>initProjectController(),{once:true});
 
-for(const type of ["change","input"])document.addEventListener(type,event=>{if(!state.busy&&event.target.matches("input,select")&&event.target.id!=="prompt")renderEstimates();});
+for(const type of ["change","input"])document.addEventListener(type,event=>{if(!state.busy&&event.target.matches("input,select")&&event.target.id!=="prompt"&&!event.target.closest('.measured-timings'))renderEstimates();});

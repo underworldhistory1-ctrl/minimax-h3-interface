@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.17.3 — Measured setups and Discussions (2026-11-15)
+
+- Show searchable measured setup groups, ranges and counts beside video/image settings. Distinguish similar video observations from exact settings and keep untested image setups unmeasured.
+- Separate timing calibration by GPU/runtime/memory policy and full render controls. Replace Qwen's coarse local keys and fixed initial formula with persisted execution measurements; validate sidecar round trips and malformed legacy metadata.
+- Add a top-bar speech-bubble Discussions link to both workspaces.
+- Preserve open reference cards during immediate redraws before asynchronous toggle events settle; detached cards cannot overwrite newer UI state.
+- Retain native CK INT8 attention, model/runtime pins and generation behavior. See docs/MEASURED_TIMINGS.md for timing limits.
+
 ## 2.17.2 — Diagnose slow sampling while retaining CK attention (2026-11-15)
 
 - Keep native Comfy Kitchen INT8 attention and the default memory policy unchanged.

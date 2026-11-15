@@ -30,6 +30,8 @@ const simulationQueue=async body=>(await fetch(base+'/__simulation/queue',{metho
     await page.locator('#refKind').selectOption('video');
     chooserPromise=page.waitForEvent('filechooser');await page.locator('#addRef').click();
     await (await chooserPromise).setFiles({name:'camera.mp4',mimeType:'video/mp4',buffer:video});
+    await page.waitForFunction(()=>state.refs.length===2);
+    assert.equal(await page.evaluate(()=>{document.querySelectorAll('#refs details.ref')[1].open=true;renderRefs();return document.querySelectorAll('#refs details.ref')[1].open;}),true,'Immediate reference redraw preserves open state before toggle events run');
     await page.evaluate(()=>document.querySelectorAll('#refs details').forEach(e=>e.open=true));
     await page.locator('#refs .ref').nth(0).locator('.ref-fields select').first().selectOption('character identity');
     await page.locator('#refs .ref').nth(1).locator('.ref-fields select').first().selectOption('motion and camera');

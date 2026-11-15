@@ -31,6 +31,9 @@
     if(!Array.isArray(job?.status?.messages))return null;
     if(job.status.messages.some(e=>Array.isArray(e)&&(e[0]==='execution_error'||e[0]==='execution_interrupted')))return null;
     const events=job.status.messages.filter(e=>Array.isArray(e)&&typeof e[0]==='string'&&object(e[1]));
+    const cached=new Set(events.filter(e=>e[0]==='execution_cached').flatMap(e=>e[1].nodes||[]).map(String));
+    const graph=job.prompt?.[2],samplers=object(graph)?Object.entries(graph).filter(([,n])=>['KSampler','SamplerCustomAdvanced','MiniMaxH3TurboSampler'].includes(n?.class_type)).map(([id])=>id):[];
+    if(samplers.length&&samplers.every(id=>cached.has(id)))return null;
     if(events.some(e=>e[0]==='execution_error'||e[0]==='execution_interrupted'))return null;
     const start=events.find(e=>e[0]==='execution_start')?.[1]?.timestamp;
     const end=events.find(e=>e[0]==='execution_success')?.[1]?.timestamp;
@@ -108,5 +111,52 @@
       id=node.inputs?.model?.[0];
     }return chain.reverse();
   }
-  return {VERSION,normalize,signature,estimate,measured,deduplicate,adaptersFor,mediaConfiguration,restoredProgress};
+  function runtimeContext(stats={},ready={}){
+    return {gpu:stats.devices?.[0]?.name||'unknown',vram:stats.devices?.[0]?.vram_total??null,
+      comfy:stats.system?.comfyui_version??null,torch:ready.acceleration?.torch??stats.system?.pytorch_version??null,
+      cuda:ready.acceleration?.cuda_runtime??null,attention:ready.attention?.implementation??null,
+      memory:ready.memory?.source==='loaded_runtime'?Object.fromEntries(['dynamic_vram_enabled','disable_async_offload','disable_pinned_memory','disable_smart_memory','fp16_intermediates','reserve_vram_gb','highvram','lowvram','novram','fast_disk','disable_fast_disk'].map(k=>[k,ready.memory[k]??null])):null};
+  }
+  function imageConfiguration(settings,refs,runtime){
+    return {kind:'qwen',version:1,gpu:runtime?.gpu||'unknown',runtime:runtime||null,
+      profile:settings.profile,mode:settings.mode,width:settings.width,height:settings.height,steps:settings.steps,
+      cfg:settings.cfg??1,lora:settings.lora||'',loraStrength:settings.lora?Number(settings.loraStrength):null,
+      transparent:!!settings.transparent,fitReferences:settings.fitReferences!==false,referenceResolution:Number(settings.referenceResolution)||0,
+      cacheDevice:settings.cacheDevice||'auto',cacheDtype:settings.cacheDtype||'default',
+      references:refs.map(r=>({width:r.width,height:r.height,bytes:r.file?.size??r.bytes??null}))};
+  }
+  function validImage(c){return c?.kind==='qwen'&&c.version===1&&typeof c.gpu==='string'&&c.gpu&&c.gpu!=='unknown'&&['int8','bf16','turbo_int8','turbo_bf16'].includes(c.profile)&&['create','edit'].includes(c.mode)&&typeof c.lora==='string'&&(!c.lora||finite(c.loraStrength))&&['auto','gpu','cpu','off'].includes(c.cacheDevice)&&['default','int8','int4'].includes(c.cacheDtype)&&[c.width,c.height,c.steps].every(n=>finite(n)&&n>0)&&finite(c.cfg)&&Array.isArray(c.references)&&c.references.every(r=>object(r)&&[r.width,r.height].every(n=>finite(n)&&n>0));}
+  function imageEstimate(config,samples){
+    const valid=validImage(config)?samples.filter(s=>validImage(s.configuration)&&signature(s.configuration)===signature(config)):[];
+    const unique=[...new Map(valid.filter(s=>s.filename&&s.source==='execution'&&finite(s.seconds)&&s.seconds>0&&s.seconds<86400).map(s=>[s.filename,s])).values()];
+    const values=unique.map(s=>s.seconds).sort((a,b)=>a-b),n=values.length;
+    return {seconds:n?(values[Math.floor((n-1)/2)]+values[Math.ceil((n-1)/2)])/2:null,low:n?values[0]:null,high:n?values[n-1]:null,count:n};
+  }
+  function groups(samples,image=false){
+    const valid=image?samples.filter(s=>validImage(s.configuration)&&s.source==='execution'):deduplicate(samples).filter(s=>s.source==='execution');
+    const configs=new Map(valid.map(s=>[signature(s.configuration),s.configuration]));
+    return [...configs.values()].map(configuration=>({configuration,...(image?imageEstimate(configuration,valid):estimate(configuration,valid.filter(s=>signature(s.configuration)===signature(configuration))))})).filter(g=>g.count>0);
+  }
+  function describe(c){
+    const model=(typeof c.profile==='string'?c.profile:typeof c.model==='string'?c.model:'').split(/[\\/]/).pop().replace(/\.safetensors$/,'');
+    return [model,c.kind==='qwen'?c.mode:c.method,`${c.width}×${c.height}`,finite(c.frames)?`${(c.frames/24).toFixed(1)}s`:null,`${c.steps} steps`,`${c.references.length} refs`+(c.references.length?' ('+c.references.filter(Boolean).map(r=>r.width&&r.height?`${r.width}×${r.height}`:r.kind).join(', ')+')':''),c.kind==='qwen'?(c.lora?c.lora.replace(/\.safetensors$/,'')+' @'+c.loraStrength:'No extra adapters'):c.adapters?.map(a=>a.name.replace(/\.safetensors$/,'')+' @'+a.strength).join(' + ')||'No extra adapters',c.kind==='qwen'?`CFG ${c.cfg} · reference detail ${c.referenceResolution||'native'} · cache ${c.cacheDevice}/${c.cacheDtype}`:null,c.passes?.length?`${c.passes.length} extra passes`:null,c.audio_refinement?.enabled?'Audio enhancement':null].filter(Boolean).join(' · ');
+  }
+  function renderHistory(container,items,current,format){
+    const doc=container.ownerDocument;
+    if(!container.dataset.initialized){
+      container.dataset.initialized='true';container.className='measured-timings';
+      const summary=doc.createElement('summary'),search=doc.createElement('input'),list=doc.createElement('ul'),more=doc.createElement('button');
+      search.type='search';search.placeholder='Find a measured setup';search.setAttribute('aria-label','Filter measured configurations');
+      more.type='button';more.className='button alt smallbtn';more.textContent='Show more';
+      container.append(summary,search,list,more);container._limit=10;
+      const render=()=>{list.replaceChildren();const query=search.value.toLowerCase(),rows=container._items.filter(g=>describe(g.configuration).toLowerCase().includes(query));
+        summary.textContent=`Measured setups · ${container._items.length}`;
+        if(!rows.length){const empty=doc.createElement('li');empty.textContent=container._items.length?'No matching measured setup.':'Complete a fresh render to learn its time. Each untested setup stays unmeasured.';list.append(empty);}
+        for(const g of rows.slice(0,container._limit)){const row=doc.createElement('li'),name=doc.createElement('strong'),time=doc.createElement('span');name.textContent=describe(g.configuration);name.title=signature(g.configuration);time.textContent=(g.count===1?format(g.seconds)+' observed':format(g.low)+' – '+format(g.high))+` · ${g.count} run${g.count===1?'':'s'}`;row.classList.toggle('selected',signature(g.configuration)===signature(container._current));row.append(name,time);list.append(row);}
+        more.hidden=rows.length<=container._limit;
+      };search.oninput=()=>{container._limit=10;render();};more.onclick=()=>{container._limit+=20;render();};container._render=render;
+    }
+    container._items=items;container._current=current;container._render();
+  }
+  return {VERSION,normalize,signature,estimate,measured,deduplicate,adaptersFor,mediaConfiguration,restoredProgress,runtimeContext,imageConfiguration,imageEstimate,groups,renderHistory};
 });
