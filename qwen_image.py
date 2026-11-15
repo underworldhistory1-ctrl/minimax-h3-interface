@@ -395,6 +395,20 @@ def update_image_details(image_dir, filename, details):
         for key in allowed:
             if key in settings:
                 metadata[key] = settings[key]
+        timing = settings.get('timingMeasurement')
+        if isinstance(timing, dict):
+            seconds, source = timing.get('seconds'), timing.get('source')
+            valid = (type(seconds) in (int, float) and 0 < seconds < 86400
+                     and source in ('execution', 'browser'))
+            if valid and source == 'execution':
+                start, end = timing.get('started'), timing.get('finished')
+                valid = (type(start) in (int, float) and type(end) in (int, float)
+                         and 0 <= start < end < 1e16
+                         and abs(seconds - (end - start) / 1000) <= .01)
+            if valid:
+                metadata['timingMeasurement'] = {'source': source, 'seconds': seconds}
+                if source == 'execution':
+                    metadata['timingMeasurement'].update(started=start, finished=end)
     temporary = sidecar_path.with_suffix(".json.tmp")
     temporary.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
     os.replace(temporary, sidecar_path)

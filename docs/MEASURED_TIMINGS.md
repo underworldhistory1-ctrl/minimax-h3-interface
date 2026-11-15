@@ -1,0 +1,13 @@
+# Measured time for each setup
+
+H3 already learns completed execution times from ComfyUI history and preserves the selected configuration with each output. Version 2.17.3 makes those measurements visible in a searchable **Measured setups** section beside the generation controls, in both Create Video and Create Image. The current video method also shows a timing note. Resolution cards clearly label observations borrowed from a similar setup.
+
+The list groups matching recorded settings, shows the observed median/range and run count, highlights the selected setup and supports search/pagination. Measurements stay attached to output metadata, so refreshing the page or opening the retained library can recover them. Deleting outputs removes their server-side records; browser observations are not a permanent backup.
+
+Timing keys separate GPU name/VRAM, core/Torch/CUDA versions, attention and reported memory policy, model/profile, mode, canvas, duration/frames, steps, ordered adapters/strengths, references and optional video passes. Qwen additionally separates guidance, cache settings, transparency, reference detail and source dimensions/bytes. Prompt text and seed are not used to create a separate timing group. Different prompts and cold/warm model loads can still vary; an observed range is not a guarantee.
+
+Qwen now records ComfyUI execution-start/success time rather than training an estimate on browser upload/queue duration. Its earlier GPU-agnostic localStorage keys and fixed initial timing formula are no longer used. Successful fully cached sampler executions do not train fresh-generation timing. Browser fallback observations remain labelled as such in metadata and do not populate the measured-setup list. Qwen's metadata updater validates and persists timing measurements through the image sidecar/library round trip.
+
+No finite library can pre-measure every possible combination. An untested image setup shows **No measured estimate**. H3 can show a visibly labelled similar observation where compatible evidence exists; it does not pretend a different resolution or step count was measured exactly. One render yields one observation, not a fabricated confidence interval. New runtime information is not invented for old files, so older measurements may be ineligible until a fresh run records it. This release changes timing presentation and recording, not models, attention, sampling or render quality.
+
+The top-bar **Discuss** speech-bubble link opens the repository's GitHub Discussions in a new tab on both pages. It does not submit a comment automatically; a GitHub account is required to post.

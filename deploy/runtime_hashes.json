@@ -150,7 +150,8 @@
     "f980c9d0581c8cc1fc30b9c77b086e994bb3cc2e",
     "f5a608e6cf271df83f1cd6b0602d3daa330f1d6e",
     "46e10b707317038c942afc5219c4e5619eba503f",
-    "01bca87da4c770f65b63f94deb3ca49209e509ed"
+    "01bca87da4c770f65b63f94deb3ca49209e509ed",
+    "65f957e649a66ad8798cd53ea017bc7e500c4e13"
   ],
   "START_HERE.md": [
     "152fdaf93210f381b743107faa2a40a20fcdf5c0",
@@ -206,7 +207,8 @@
     "fe16b348d97f7a5d8d995ebbd9712fe708f7423e",
     "75249069675e6eb182137522df12405f18d3e2f7",
     "d76bd2ba3eff83e4750dd8f89ee3e66d1f7af60a",
-    "3f8eb714d02d07d110beb8d501d7ae95b11d7e1a"
+    "3f8eb714d02d07d110beb8d501d7ae95b11d7e1a",
+    "94dc0ec9104f6b54af9fc588d2ef71a9eb312003"
   ],
   "__init__.py": [
     "0587cbee696bac5f94d39ee664ce3114d76892e0",
@@ -243,7 +245,8 @@
     "ea4a6905600ae144415c793d8cf9828579dbbaf0",
     "f87f3081e1e4bb4e550b8f063b2e47642052a153",
     "196f25d42f14b7e704160707181d56258c8d1b2b",
-    "d28ba4166c06aa3a9148c389d0be41a19462906e"
+    "d28ba4166c06aa3a9148c389d0be41a19462906e",
+    "c1c2ddba88a4393e8951de7652f725f2d3c14f97"
   ],
   "corpus/h3_ref_style_rules.md": [
     "ac1818d18ad42fd20a77d19311be163846f1f376",
@@ -400,7 +403,8 @@
     "ef2d0c55149de815f80569cf4c5155132bb0b193",
     "fc060c75ff1f3bc305eb8b9046bff66fea631142",
     "82fdca9555fad9c5f5a1ffd093b19776e174f445",
-    "688d5ac09889fec20de85eb0e0ba0f86084bbccd"
+    "688d5ac09889fec20de85eb0e0ba0f86084bbccd",
+    "2e4b253306285df9f11b74ba1f74d8ca6d21abe3"
   ],
   "deploy/download_control_models.py": [
     "cabe331272e2ceb18f89d2db90d6e6d698db6bd7",
@@ -514,7 +518,8 @@
     "cf2a9f707767edd4df225c562b9fb1935386b727",
     "fb8a3ece893a08c5dcb51ebea694fd30f267d994",
     "e0451ae5e1a6609226ed2bdf2e47127896858d3c",
-    "11b50a53cd56b5b726ee967d9a74d08fec9617b2"
+    "11b50a53cd56b5b726ee967d9a74d08fec9617b2",
+    "dd99de04e3028fe57f180c430a61ef39fe952ccc"
   ],
   "deploy/launcher_models.py": [
     "2bf41f0300ee0682fb25a78e502c0e249d39daaa",
@@ -572,7 +577,8 @@
     "3ceb508100c4810dc94b491ed3ab42c3c81de5b9",
     "7c2ceee9e7cfa7f5c176f51e4fad4623408af201",
     "80c3ddb735690fb61aa0b8bf0ebeb724aad6a753",
-    "ac4150cc22a035aaa080805a6b2614cff619be37"
+    "ac4150cc22a035aaa080805a6b2614cff619be37",
+    "b3eefa3c6e603d2f0feaaa2b7a26ef6f8dc6065c"
   ],
   "deploy/openbayes_prepare_bf16.py": [
     "0389d13ef82aa213969ffb5bba6215dac0d06453",
@@ -623,7 +629,8 @@
     "ef3fada2187f9e2104e134aec4acb40f92f01946",
     "ffe9e529db97619b41e8e6102f733b95799ae2e8",
     "423fd231378999fb322cf1b51bdf746ba588397d",
-    "479ed383ad556839a0c7b4d85c4519da29f97e9f"
+    "479ed383ad556839a0c7b4d85c4519da29f97e9f",
+    "dafac7d3ce787fa76e705901fcf2162a877c5027"
   ],
   "deploy/runtime_patches.py": [
     "0fdc101b492faeb3d902f9d268074d0f25bf5331",
@@ -716,7 +723,8 @@
     "f7bce641bb937bdcf58fd2b53f53d35112597682",
     "ff02fe5fcd4bc33da9c156697f0e1138e29308f9",
     "c201da0a8d171cbee58694f59d4207ba49acfcbe",
-    "594722ef20b2ce44c86bf1a5506da88560fc8a76"
+    "594722ef20b2ce44c86bf1a5506da88560fc8a76",
+    "a3e8b41ac911c0501c9b5e05bb2b0901d612bc8c"
   ],
   "deploy/v2_standby.py": [
     "5a698d6808d69236edac8a6ecbbfd58ad358c847",
@@ -737,7 +745,8 @@
     "d32aad003b1e1769fce6919ba752ef862abdd8b7",
     "d8dbbf569cd67483ba56c119bffedec1660b25ea",
     "f6c79d6d3c7ccd413c7fe5c657823280a99d170a",
-    "fdcabbf7dc9ecb511a4c2a64408e3b534f22e53f"
+    "fdcabbf7dc9ecb511a4c2a64408e3b534f22e53f",
+    "34fcb48e99d9eb4c9624944d9ced0c075e7cec39"
   ],
   "deploy/worker_lifecycle.py": [
     "179dc4fa08436e82dc7b1dcbd34019b95d6cf489",
@@ -920,7 +929,8 @@
     "dfcf270726520d23979f4356705bc6a40c6e7568",
     "eac6912462c3c0c8b64a3fd6e663faa026f34e52",
     "fd486e74714cf873a6c22a7819d7369dbe9b859d",
-    "0ba2de8fce9a71dc2aebe21cc5a1631d7823d0b1"
+    "0ba2de8fce9a71dc2aebe21cc5a1631d7823d0b1",
+    "fdae0f05b47f8d30843c5d2d0bd347c3a35ddf7a"
   ],
   "docs/MATLOW_AND_SELECTIONS.md": [
     "1185755c8fc877b7d9b9297287127d2bd7be7047",
@@ -1076,7 +1086,8 @@
   ],
   "docs/RELEASE_2_17.md": [
     "211a504623184f8c44ed6860175ef74c96e20986",
-    "85e502b119eb137867322850e7baacfeebfbc7ee"
+    "85e502b119eb137867322850e7baacfeebfbc7ee",
+    "5405e93d1c0ce10eb1aceccb32873ce67ef12813"
   ],
   "docs/RELEASE_2_6.md": [
     "12cde9c1f5e71ac0dcc12253bca3186f50ecfa14",
@@ -1708,7 +1719,8 @@
     "9418c6fd72f9db9cf46970ba6bebcd5df27c3eef",
     "97a09539da24f0c69464d63759f79df8271ab6d2",
     "bf1a22c5136f4df218003565526465a7ff447f9a",
-    "d6f3082cf47e515a5563345eaceb592b8a20fa25"
+    "d6f3082cf47e515a5563345eaceb592b8a20fa25",
+    "c313b4f7f50b550480e087afa58e8113cb65bc3b"
   ],
   "h3_lab/runtime_fingerprint.py": [
     "61b07a65b998fc869acab9a01d121f465ac10fb5",
@@ -1794,7 +1806,8 @@
     "ad2a518b8736a42fea4473e60846b50126c56fd5",
     "fb85d18bb31b59557c4bc94b7bc94472996a7fb2",
     "fca93b138886a5910703e9492cda44517c8e9114",
-    "65272485595799feefae11b4a2f94c22ecdef4e0"
+    "65272485595799feefae11b4a2f94c22ecdef4e0",
+    "dff01421f215fb6132de8ead00afdef381c57dd8"
   ],
   "install.sh": [
     "1a3f4eaeede3a98ea1d78dd8b8dc5b90817cb6af",
@@ -3285,5 +3298,8 @@
     "6ee71f87f2598581c8ecc8d698de64436f62768a",
     "9cb19921308b0e8234abf56652540d84b8f97945",
     "ca95b72d2bec41c96b5a1c3031ca9a472d83ba1a"
+  ],
+  "deploy/performance_report.py": [
+    "2e8eae7b64b791eff382eef10ccc866ab71f172d"
   ]
 }

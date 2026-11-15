@@ -72,7 +72,7 @@
     </div>
     <label id="transparentLabel" style="display:flex;gap:8px;align-items:center;color:var(--text)"><input id="transparent" type="checkbox" style="width:auto"> Transparent background (RGBA)</label>
     <div class="controls"><div><label for="cacheDevice">REFERENCE CACHE</label><select id="cacheDevice"><option value="auto">Auto (default)</option><option value="gpu">GPU</option><option value="cpu">CPU / RAM</option><option value="off">Off (recompute)</option></select></div><div><label for="cacheDtype">CACHE PRECISION</label><select id="cacheDtype"><option value="default">Default / lossless</option><option value="int8">INT8 (experimental)</option><option value="int4">INT4 (experimental)</option></select></div></div><div class="tip">Cache applies with references. Quantized cache can change the result; INT4 has greater error. CPU uses host RAM.</div>
-    <div id="dimensions" class="notice"></div><div id="estimate" class="tip"></div>
+    <div id="dimensions" class="notice"></div><div id="estimate" class="tip"></div><details id="imageMeasuredTimings"></details>
    </section>
   </div>
   <div class="actiondock"><button id="generate" class="button" type="button">Generate image →</button><button id="cancel" class="button alt hidden" type="button">Cancel generation</button><p data-guidance-key="imageHelp7" lang="en" dir="ltr">Jobs continue after refresh. Finished images stay until deleted.</p></div>
@@ -98,9 +98,10 @@
 <script src="./h3/reference-order.js?v=20261104-interface-2.13.0"></script>
 <script src="./h3/workspace-layout.js?v=20261104-interface-2.13.0"></script>
 <script src="./h3/qwen-reference-plan.js?v=20261115-qwen"></script>
-<script src="./image-studio.js?v=20261115-interface-2.17.1"></script>
-<script src="./h3/updates-ui.js?v=20261103-interface-2.9.0"></script>
-<link rel="stylesheet" href="./studio-ux.css?v=20261110-interface-2.16.0">
+<script src="./h3/timing-estimator.js?v=20261115-interface-2.17.3"></script>
+<script src="./image-studio.js?v=20261115-interface-2.17.3"></script>
+<script src="./h3/updates-ui.js?v=20261115-interface-2.17.3"></script>
+<link rel="stylesheet" href="./studio-ux.css?v=20261115-interface-2.17.3">
 <script src="./h3/studio-ux.js?v=20261104-interface-2.13.0"></script>
 <script src="./h3/storage-status.js?v=20261104-interface-2.15.0"></script>
 </body>

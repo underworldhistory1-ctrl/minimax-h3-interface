@@ -49,12 +49,13 @@ function outputDimensions(){
   const round=value=>{const n=Math.floor(value);return value-n===.5?n+n%2:Math.round(value);};
   return [Math.max(32,round(w/32)*32),Math.max(32,round(h/32)*32)];
 }
-function estimateSeconds(){
-  const [w,h]=outputDimensions(),steps=Math.max(1,Number($("steps").value)||40),profile=$("profile").value||"int8";
-  const mode=state.refs.length?"edit":"create",key=`qwen.eta.${mode}.${profile}.${w}x${h}.${steps}`;let stored=[];try{stored=JSON.parse(localStorage.getItem(key)||"[]");}catch{}
-  if(stored.length)return stored.reduce((a,b)=>a+b,0)/stored.length;
-  const base=profile==="bf16"?1.25:1;return Math.max(20,(w*h/1048576)*steps*.8*base+(mode==="edit"?18:8));
+function imageTimingConfiguration(settings=null){
+  if(!settings){const [width,height]=outputDimensions(),guidance=$('imageGuidance').value;settings={width,height,profile:$('profile').value,steps:Number($('steps').value),mode:state.refs.length?'edit':'create',cfg:guidance==='auto'?($('negativePrompt').value.trim()?2:1):Number(guidance),lora:$('lora').value,loraStrength:Number($('loraStrength').value),transparent:!state.refs.length&&$('transparent').checked,referenceResolution:$('referenceResolution').value,cacheDevice:$('cacheDevice').value,cacheDtype:$('cacheDtype').value};}
+  return H3TimingEstimator.imageConfiguration({...settings,fitReferences:$('fitReferences').checked},state.refs,state.timingRuntime);
 }
+function imageTimingSamples(){return state.results.map(entry=>({filename:entry.filename,seconds:entry.settings?.timingMeasurement?.seconds,source:entry.settings?.timingMeasurement?.source,configuration:entry.settings?.timingConfiguration}));}
+function imageEstimate(){return H3TimingEstimator.imageEstimate(imageTimingConfiguration(),imageTimingSamples());}
+function estimateSeconds(){return imageEstimate().seconds;}
 function updateSettings(){
   const turbo=$("profile").value.startsWith("turbo_");
   if(turbo&&!state.turboControls)state.baselineSteps=$("steps").value;
@@ -67,7 +68,8 @@ function updateSettings(){
   $("aspect").disabled=state.busy;$("resolution").disabled=state.busy;$("canvasOptions").hidden=!hasRefs;$("referenceResolution").disabled=state.busy||state.refs.length<2;$("transparentLabel").hidden=hasRefs;
   for(const meta of document.querySelectorAll('[data-reference-canvas="true"]')){const first=state.refs[0];if(first)meta.textContent=fmtBytes(first.file.size)+(sourceCanvas?" · sets canvas size":" · fitted to selected canvas");}
   const [w,h]=outputDimensions();$("dimensions").textContent=sourceCanvas?(state.refs[0].width?`Output canvas from first reference · approximately ${w} × ${h}`:"Output canvas follows the first reference · reading dimensions…"):`${w} × ${h} · ${(w*h/1048576).toFixed(1)} MP target`;
-  $("estimate").textContent=`Initial estimate: ${fmt(estimateSeconds())}. It will calibrate from completed images on this server.`;
+  const estimate=imageEstimate();$('estimate').textContent=estimate.count?(estimate.count===1?fmt(estimate.seconds)+' observed':fmt(estimate.low)+' – '+fmt(estimate.high))+` · ${estimate.count} measured run${estimate.count===1?'':'s'} for this setup`:'No measured estimate for this setup yet. A completed fresh render will teach its time.';
+  const current=imageTimingConfiguration();H3TimingEstimator.renderHistory($('imageMeasuredTimings'),H3TimingEstimator.groups(imageTimingSamples(),true).filter(g=>H3TimingEstimator.signature(g.configuration.runtime)===H3TimingEstimator.signature(current.runtime)),current,fmt);
 }
 let referenceSignature='',referenceWrite=Promise.resolve(),referenceWriteVersion=0;
 function persistReferences(){
@@ -190,6 +192,8 @@ async function checkConnection(){
     for(const option of $("lora").options)option.disabled=!!option.value&&!state.availableLoras.some(name=>name.replaceAll('\\','/')===option.value);
     $("loraNote").textContent=state.availableLoras.some(name=>name.replaceAll('\\','/')==="qwen21/NSFW-Qwen-by-TheseAlpacas-V2.safetensors")?"V2 installed · applies before reference caching. Strength 0 disables its effect.":"V2 installation could not be verified. Your saved selection is kept.";
     const data=await H3RenderValues.readJson(response);state.profiles=data.profiles||{};state.nodes=data.nodes||{};state.inferenceEnabled=data.inference_enabled!==false;state.standbyReason=state.inferenceEnabled?null:(data.reason||"Inference is disabled on this standby server.");state.ready=state.inferenceEnabled&&!!data.ready;
+    const context=await Promise.all(['/system_stats','/h3_studio/readiness'].map(async path=>{try{const response=await fetch(api(path),{cache:'no-store',signal:AbortSignal.timeout(3000)});return response.ok?await response.json():{};}catch{return {};}}));
+    state.timingRuntime=H3TimingEstimator.runtimeContext(...context);
     for(const option of $("profile").options){option.disabled=!state.profiles[option.value]?.ready;}
     let savedProfile;try{savedProfile=JSON.parse(sessionStorage.getItem('qwen.imageDraft')||'{}').profile;}catch{}
     if(!state.profiles[$("profile").value]?.ready&&!savedProfile){const first=[...$("profile").options].find(option=>!option.disabled);if(first)$("profile").value=first.value;}
@@ -212,7 +216,7 @@ function handleSocket(message){
     const value=Number(data.value||0),max=Math.max(1,Number(data.max||1)),now=Date.now();if(state.lastStepAt&&value>state.lastStep)state.stepTimes.push((now-state.lastStepAt)/1000/(value-state.lastStep));if(value>state.lastStep)state.lastStepAt=now;state.lastStep=value;state.stepTotal=max;saveActiveJob();
     const pct=12+Math.round(78*value/max),avg=state.stepTimes.length?state.stepTimes.slice(-8).reduce((a,b)=>a+b,0)/Math.min(8,state.stepTimes.length):0;setProgress(`Sampling · ${value}/${max}`,pct,avg?avg*(max-value):null);
   }else if(message.type==="executing"&&state.busy){
-    if(data.node===null){pollHistory(true);}else if(data.node==="save")setProgress("Saving PNG and settings",96,2);else if(data.node==="decode")setProgress("Decoding image",91,5);else if(!state.lastStepAt)setProgress("Loading Qwen Image",8,estimateSeconds(),true);
+    if(data.node===null){pollHistory(true);}else if(data.node==="save")setProgress("Saving PNG and settings",96,null);else if(data.node==="decode")setProgress("Decoding image",91,null);else if(!state.lastStepAt)setProgress("Loading Qwen Image",8,estimateSeconds(),true);
   }else if(message.type==="execution_error"&&state.busy){failGeneration(data.exception_message||"ComfyUI graph failed");}
 }
 function saveActiveJob(){if(!state.activePromptId)return;sessionStorage.setItem("qwen.activeJob",JSON.stringify({promptId:state.activePromptId,pendingToken:state.pendingToken,settings:state.settings,started:state.started,uploaded:state.uploaded,lastStep:state.lastStep,stepTotal:state.stepTotal,stepTimes:state.stepTimes.slice(-8),completionObservation:state.completionObservation}));}
@@ -340,6 +344,7 @@ async function generate(){
   const promptEpoch=++state.generationEpoch;
   showError("");let settings;try{if(!await checkConnection())throw Error(state.standbyReason||"Qwen Image is not ready on this server.");if(promptEpoch!==state.generationEpoch||state.busy)return;settings=captureSettings();}catch(error){showError(error.message);return;}
   state.completionObservation=null;state.settings=settings;state.abort=new AbortController();state.uploaded=[];state.started=Date.now();state.lastStepAt=0;state.lastStep=0;state.stepTotal=0;state.stepTimes=[];setBusy(true);setProgress("Preparing inputs",2,estimateSeconds(),true);showStage("Generating your image","The first run can include model loading.");
+  settings.timingConfiguration=imageTimingConfiguration(settings);
   let submitted=false,submissionSettled=false;
   try{
     if(settings.mode==="edit")for(let i=0;i<state.refs.length;i++){const name=await uploadOne(state.refs[i].file,i);state.uploaded.push(name);}
@@ -398,7 +403,7 @@ async function pollHistory(force=false){
     if(state.activePromptId!==id||epoch!==state.generationEpoch)return;
     const history=all[id];
     if(history){
-      const file=findOutput(history);if(file){await completeGeneration(file);return;}
+      const file=findOutput(history);if(file){await completeGeneration(file,history);return;}
       const status=history.status||{},messages=status.messages||[];
       const failure=messages.find(message=>message[0]==='execution_error');
       const interrupted=messages.some(message=>message[0]==='execution_interrupted');
@@ -409,15 +414,15 @@ async function pollHistory(force=false){
   }catch(error){if(state.activePromptId===id&&epoch===state.generationEpoch&&force)showError('Reconnecting to the saved image. '+error.message);}
   finally{if(historyPollRequest===request)historyPollRequest=null;if(epoch===state.generationEpoch&&state.activePromptId)historyPollTimer=setTimeout(()=>pollHistory(false),2000);}
 }
-async function completeGeneration(file){
+async function completeGeneration(file,history){
   if(state.completing)return;state.completing=true;
   const epoch=state.generationEpoch,id=state.activePromptId,filename=file.filename,settings=state.settings||{};
-  if(state.completionObservation?.id!==id||state.completionObservation?.filename!==filename){state.completionObservation={id,filename,elapsed:(Date.now()-state.started)/1000,modified:Date.now()/1000};try{saveActiveJob();}catch{}}
+  if(state.completionObservation?.id!==id||state.completionObservation?.filename!==filename){const timing=H3TimingEstimator.measured(history);state.completionObservation={id,filename,elapsed:timing?.seconds??(Date.now()-state.started)/1000,timing,modified:Date.now()/1000};try{saveActiveJob();}catch{}}
   const observation=state.completionObservation,elapsed=observation.elapsed;
+  settings.timingMeasurement=observation.timing||{source:'browser',seconds:elapsed};
   try{
     const response=await fetch(api('/h3_studio/image_details'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename,render_seconds:elapsed,settings}),signal:AbortSignal.timeout(15000)});if(!response.ok)throw Error('Image settings could not be saved.');
     if(epoch!==state.generationEpoch||id!==state.activePromptId)return;
-    try{if(settings.mode&&settings.profile&&settings.width&&settings.height&&settings.steps){const key=`qwen.eta.${settings.mode}.${settings.profile}.${settings.width}x${settings.height}.${settings.steps}`,stored=JSON.parse(localStorage.getItem(key)||'[]'),samples=Array.isArray(stored)?stored:[];samples.push(elapsed);localStorage.setItem(key,JSON.stringify(samples.slice(-8)));}}catch{}
     stopImagePolling();state.activePromptId=null;sessionStorage.removeItem('qwen.activePromptId');sessionStorage.removeItem('qwen.activeJob');await cleanupUploads();if(epoch!==state.generationEpoch)return;setBusy(false);setProgress('Completed',100,0);$('timer').textContent='Actual time: '+fmt(elapsed);await loadLibrary(true);if(epoch!==state.generationEpoch)return;showImage(state.results.find(item=>item.filename===filename)||{filename,settings});showError('');
   }catch(error){if(epoch===state.generationEpoch&&id===state.activePromptId){if(!observation.previewShown){showImage({filename,settings,modified:observation.modified});observation.previewShown=true;}showError('Image rendered. Retrying settings save after a connection error. '+error.message);}throw error;}
   finally{state.completing=false;}
@@ -446,6 +451,7 @@ async function loadLibrary(force=false){
   try{const response=await fetch(api("/h3_studio/image_library"),{cache:"no-store"});if(!response.ok)throw Error();state.results=(await H3RenderValues.readJson(response)).items||[];renderLibrary();}catch{if(force)showError("Could not refresh the generated image library.");}
 }
 function renderLibrary(){
+  updateSettings();
   $("results").replaceChildren();$("imageCount").textContent=`(${state.results.length} on server)`;$("emptyHistory").classList.toggle("hidden",!!state.results.length);const remaining=Math.max(0,state.results.length-state.visible);$("showMore").classList.toggle("hidden",!remaining);$("showMore").textContent=`Show ${Math.min(8,remaining)} more · ${remaining} remaining`;
   state.results.slice(0,state.visible).forEach((entry,index)=>{const card=document.createElement("div");card.className="result";const open=document.createElement("button");open.className="result-open";open.type="button";const media=document.createElement("div");media.className="result-media";const image=document.createElement("img");image.src=imageUrl(entry);image.loading="lazy";image.alt=`Generated image ${index+1}`;media.append(image);const label=document.createElement("div");label.className="result-label";label.textContent=`${entry.width} × ${entry.height} · ${(entry.settings?.profile||"Qwen").toUpperCase()}`;const small=document.createElement("small");small.textContent=new Date(entry.modified*1000).toLocaleString()+(entry.render_seconds?" · "+fmt(entry.render_seconds):"");label.append(small);open.append(media,label);open.onclick=()=>showImage(entry);const actions=document.createElement("div");actions.className="result-card-actions";const details=document.createElement("button");details.type="button";details.textContent="Details";details.onclick=()=>openDetails(entry,details);const remove=document.createElement("button");remove.type="button";remove.textContent="Delete";remove.setAttribute("aria-label",`Delete generated image ${index+1}`);remove.onclick=()=>deleteEntry(entry);const download=document.createElement("button");download.type="button";download.textContent="Download";download.setAttribute("aria-label",`Download generated image ${index+1}`);download.onclick=()=>downloadImageEntry(entry);actions.append(download,details,remove);card.append(open,actions);$("results").append(card);});
 }
@@ -483,7 +489,7 @@ $("deleteCurrent").onclick=()=>deleteEntry(state.current);$("refreshLibrary").on
 $("randomSeed").onclick=()=>{if(state.busy)return;$("seed").value=H3RenderValues.randomSeed();saveDraft();};
 for(const id of [...imageExtraControls,"prompt","aspect","resolution","steps","seed","transparent","referenceResolution","customSize","fitReferences","lora","loraStrength"]){$(id).addEventListener("input",()=>{if(id==="aspect"||id==="resolution")$("customSize").checked=true;updateSettings();saveDraft();if(id==="prompt")renderMentions();refreshPromptPreview();});}
 window.addEventListener("focus",()=>loadLibrary(false));
-state.timer=setInterval(()=>{if(state.busy&&state.started){const elapsed=(Date.now()-state.started)/1000;$("timer").textContent="Elapsed: "+fmt(elapsed);if(!state.lastStepAt)$("remaining").textContent="Time remaining: "+fmt(Math.max(0,estimateSeconds()-elapsed));}},1000);
+state.timer=setInterval(()=>{if(state.busy&&state.started){const elapsed=(Date.now()-state.started)/1000;$("timer").textContent="Elapsed: "+fmt(elapsed);if(!state.lastStepAt){const estimate=estimateSeconds();$("remaining").textContent=estimate===null?'Time remaining: collecting measurements':'Time remaining: '+fmt(Math.max(0,estimate-elapsed));}}},1000);
 async function resume(){if(!state.activePromptId)return;let job={};try{job=JSON.parse(sessionStorage.getItem("qwen.activeJob")||"{}");}catch{}if(job.promptId===state.activePromptId){state.settings=job.settings||null;const observation=job.completionObservation;if(observation?.id===state.activePromptId&&Number.isFinite(observation.elapsed)&&observation.elapsed>=0&&Number.isFinite(observation.modified)){state.completionObservation={...observation,previewShown:false};}state.pendingToken=job.pendingToken||null;state.started=Number(job.started)||Date.now();state.uploaded=Array.isArray(job.uploaded)?job.uploaded:[];state.lastStep=Number(job.lastStep)||0;state.stepTotal=Number(job.stepTotal)||0;state.stepTimes=Array.isArray(job.stepTimes)?job.stepTimes:[];}else{state.started=Date.now();}setBusy(true);setProgress("Restoring active generation",5,null,true);if(state.lastStep&&state.stepTotal)setProgress(`Sampling · ${state.lastStep}/${state.stepTotal}`,12+Math.round(78*state.lastStep/state.stepTotal),null);openSocket();pollQueue();pollHistory(false);}
 async function initialize(){
   restoreDraft();

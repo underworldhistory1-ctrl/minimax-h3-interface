@@ -14,7 +14,14 @@
   button.id = 'h3UpdatesButton'; button.type = 'button'; button.className = 'button alt small h3-updates-trigger';
   button.setAttribute('aria-haspopup', 'dialog'); button.setAttribute('aria-controls', 'h3UpdatesDialog');
   button.innerHTML = icon + '<span data-update-label>Updates</span><span class="h3-update-badge" data-update-badge aria-hidden="true" hidden>1</span>';
-  tools.append(nodes, button); header.append(tools);
+  const discussions = document.createElement('a');
+  discussions.id = 'h3DiscussionsLink'; discussions.className = 'button alt small h3-discussions-link';
+  discussions.href = 'https://github.com/underworldhistory1-ctrl/minimax-h3-interface/discussions';
+  discussions.target = '_blank'; discussions.rel = 'noopener noreferrer';
+  discussions.title = 'Ask a question, report a problem or share a render';
+  discussions.setAttribute('aria-label', 'Open GitHub Discussions in a new tab');
+  discussions.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M21 11a8 8 0 0 1-8 8H7l-5 3V11a9 9 0 0 1 19 0Z"/><path d="M7 10h10M7 14h6"/></svg><span>Discuss</span>';
+  tools.append(discussions, nodes, button); header.append(tools);
   const dialog = document.createElement('dialog');
   dialog.id = 'h3UpdatesDialog'; dialog.className = 'h3-updates-dialog';
   dialog.setAttribute('aria-labelledby', 'h3UpdatesTitle');
