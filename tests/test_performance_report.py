@@ -13,10 +13,11 @@ class PerformanceReportTests(unittest.TestCase):
             disable_pinned_memory=False, disable_smart_memory=False, reserve_vram=3.0,
             fp16_intermediates=False, cache_ram=[], secret_token='do-not-export')
         model = types.SimpleNamespace(model=types.SimpleNamespace(is_dynamic=lambda: False))
-        result = runtime_memory({'comfy.cli_args': types.SimpleNamespace(args=args),
+        result = runtime_memory({'comfy.cli_args': types.SimpleNamespace(args=args, enables_dynamic_vram=lambda: False),
             'comfy.model_management': types.SimpleNamespace(current_loaded_models=[model])})
         self.assertEqual(result['source'], 'loaded_runtime')
         self.assertTrue(result['disable_dynamic_vram'])
+        self.assertFalse(result['dynamic_vram_enabled'])
         self.assertEqual(result['loaded_dynamic_models'], 0)
         self.assertNotIn('do-not-export', str(result))
 
@@ -40,7 +41,13 @@ class PerformanceReportTests(unittest.TestCase):
             'disable_dynamic_vram': False}}, args))
         self.assertFalse(launcher.memory_ready({}, args))
         self.assertTrue(launcher.memory_ready({'memory': {'source': 'loaded_runtime',
-            'disable_dynamic_vram': True}}, args))
+            'disable_dynamic_vram': True, 'dynamic_vram_enabled': False}}, args))
+
+    def test_explicit_enable_cannot_override_estimate_mode_verification(self):
+        args = launcher.parser().parse_args(['--disable-dynamic-vram'])
+        for enabled in (True, None):
+            self.assertFalse(launcher.memory_ready({'memory': {'source': 'loaded_runtime',
+                'disable_dynamic_vram': True, 'dynamic_vram_enabled': enabled}}, args))
 
     def test_default_does_not_add_memory_flags_or_reuse_explicit_estimate_worker(self):
         args = launcher.parser().parse_args([])

@@ -56,7 +56,7 @@ def collect_report(api):
     ready = read('/h3_studio/readiness')
     report['attention'] = select(ready.get('attention'), ('source', 'implementation', 'quantized', 'scope', 'checkpoint_overrides_possible'))
     report['acceleration'] = select(ready.get('acceleration'), ('torch', 'cuda_runtime', 'native_cuda_ready', 'execution_device'))
-    report['memory'] = select(ready.get('memory'), ('source', 'disable_dynamic_vram', 'disable_async_offload',
+    report['memory'] = select(ready.get('memory'), ('source', 'disable_dynamic_vram', 'dynamic_vram_enabled', 'disable_async_offload',
         'disable_pinned_memory', 'disable_smart_memory', 'fp16_intermediates', 'highvram', 'lowvram',
         'novram', 'cpu', 'gpu_only', 'fast_disk', 'disable_fast_disk', 'reserve_vram_gb',
         'loaded_models', 'loaded_dynamic_models', 'ram_total_bytes', 'ram_available_bytes', 'process_rss_bytes', 'swap_percent'))

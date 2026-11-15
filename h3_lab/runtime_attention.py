@@ -62,7 +62,8 @@ def runtime_root_identity(root):
 def runtime_memory(modules=None):
     """Read loaded settings and memory gauges; never export argv or run inference."""
     modules = sys.modules if modules is None else modules
-    args = getattr(modules.get('comfy.cli_args'), 'args', None)
+    cli = modules.get('comfy.cli_args')
+    args = getattr(cli, 'args', None)
     result = {'source': 'loaded_runtime' if args is not None else 'unknown'}
     if args is not None:
         for key in ('disable_dynamic_vram', 'disable_async_offload', 'disable_pinned_memory',
@@ -71,6 +72,8 @@ def runtime_memory(modules=None):
             result[key] = bool(getattr(args, key, False))
         reserve = getattr(args, 'reserve_vram', None)
         result['reserve_vram_gb'] = reserve if isinstance(reserve, (int, float)) else None
+        enabled = getattr(cli, 'enables_dynamic_vram', None)
+        result['dynamic_vram_enabled'] = bool(enabled()) if callable(enabled) else None
     management = modules.get('comfy.model_management')
     loaded = getattr(management, 'current_loaded_models', None)
     if isinstance(loaded, (list, tuple)):

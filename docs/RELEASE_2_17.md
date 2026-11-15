@@ -6,7 +6,7 @@ This release updates the existing Create Image workspace and retains the baselin
 
 Native CK INT8 attention remains the default. The [performance guide](PERFORMANCE_DIAGNOSIS.md) records the 5090 report, relevant earlier source changes and remaining evidence gaps. Read-only reports now expose loaded memory flags and selected workload controls. An opt-in estimate-loading comparison propagates through Windows and Linux workers and cannot silently reuse a mismatched worker. This supplies diagnosis and a controlled test, not proof of the reporter's root cause or restored speed. Canonical 2.17.1 runtime hashes retain safe official upgrades.
 
-Verification includes eight new CPU regressions for report privacy/partial failures/numeric handling, worker propagation and loaded-policy mismatch; Windows/Linux full-suite CI, JavaScript and browser acceptance remain release gates. A real local fixture API produced a complete report; an offline endpoint produced an explicitly incomplete report. No new GPU inference was run for this follow-up.
+Verification includes nine new CPU regressions for report privacy/partial failures/numeric handling, worker propagation and effective loaded-policy mismatch; Windows/Linux full-suite CI, JavaScript and browser acceptance remain release gates. A real local fixture API produced a complete report; an offline endpoint produced an explicitly incomplete report. No new GPU inference was run for this follow-up.
 
 ## Changes
 

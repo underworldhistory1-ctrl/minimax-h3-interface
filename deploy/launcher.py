@@ -678,7 +678,8 @@ def memory_ready(ready, args):
     memory = ready.get('memory', {})
     if memory.get('source') != 'loaded_runtime':
         return not requested  # Older workers cannot verify the explicit opt-out.
-    return memory.get('disable_dynamic_vram') is requested
+    return (memory.get('disable_dynamic_vram') is requested and
+            (not requested or memory.get('dynamic_vram_enabled') is False))
 
 
 def server_command(root, python, args, platform=None):
