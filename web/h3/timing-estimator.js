@@ -134,8 +134,9 @@
   }
   function groups(samples,image=false){
     const valid=image?samples.filter(s=>validImage(s.configuration)&&s.source==='execution'):deduplicate(samples).filter(s=>s.source==='execution');
-    const configs=new Map(valid.map(s=>[signature(s.configuration),s.configuration]));
-    return [...configs.values()].map(configuration=>({configuration,...(image?imageEstimate(configuration,valid):estimate(configuration,valid.filter(s=>signature(s.configuration)===signature(configuration))))})).filter(g=>g.count>0);
+    const configs=new Map();
+    for(const sample of valid){const key=signature(sample.configuration);if(!configs.has(key))configs.set(key,{configuration:sample.configuration,samples:[]});configs.get(key).samples.push(sample);}
+    return [...configs.values()].map(({configuration,samples})=>({configuration,...(image?imageEstimate(configuration,samples):estimate(configuration,samples))})).filter(g=>g.count>0);
   }
   function describe(c){
     const model=(typeof c.profile==='string'?c.profile:typeof c.model==='string'?c.model:'').split(/[\\/]/).pop().replace(/\.safetensors$/,'');

@@ -13,6 +13,10 @@ test('measured setup groups retain separate canvas and step observations',()=>{
  const groups=E.groups([sample(c,100,'a'),sample(c,120,'b'),sample(d,35,'c'),sample(c,999,'d','browser')]);
  assert.equal(groups.length,2);assert.equal(groups[0].seconds,110);assert.equal(groups[0].count,2);assert.equal(groups[1].seconds,35);
 });
+test('many distinct setup groups never blend incomplete reference observations',()=>{
+ const samples=Array.from({length:500},(_,i)=>sample({...config(),mode:'refs',references:[{kind:'image',bytes:i+1}]},i+1,'file'+i));
+ const groups=E.groups(samples);assert.equal(groups.length,500);assert.ok(groups.every((g,i)=>g.count===1&&g.seconds===i+1));
+});
 const imageConfig=()=>E.imageConfiguration({mode:'create',profile:'int8',width:1024,height:1024,steps:40,cfg:1},[],{gpu:'RTX 5090',attention:'CK'});
 test('image timing separates GPU adapters precision references and cache settings',()=>{
  const c=imageConfig(),samples=[sample(c,31,'a')];

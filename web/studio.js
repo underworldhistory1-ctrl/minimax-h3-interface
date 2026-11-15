@@ -646,14 +646,14 @@ function attachReferenceSorting(){
   H3Drag.attach(container,{selector:'.reference-unit',handle:'.ref-block-handle',locked,onCommit:commit,onCancel:renderRefs});
 }
 function renderRefs() {
-  for(const card of $('refs').querySelectorAll('details.ref'))if(card._reference)card._reference.expanded=card.open;
+  for(const card of $('refs').querySelectorAll('details.ref'))if(card._reference&&!!card._reference.expanded===card._expandedAtRender)card._reference.expanded=card.open;
   state.refs=orderedRefs();
   const locked=state.busy||state.projectLoading||(typeof referenceMutationLocked==='function'&&referenceMutationLocked());
   H3ReferenceControls.cleanup($("refs"));
   $("refs").replaceChildren();
   state.refs.forEach((ref,index) => {
     if(ref.restoreError){const missing=missingInputCard(ref,()=>state.refs.splice(index,1));missing.dataset.referenceIndex=String(index);missing.classList.add('reference-unit');$("refs").append(missing);return;}
-    const card=document.createElement("details");card.className="ref compact-ref";card._reference=ref;card.open=!!ref.expanded;card.ontoggle=()=>{if(!card.isConnected)return;ref.expanded=card.open;if(card.open){const large=card.querySelector(".ref-expanded-preview");if(large&&!large.src)large.src=ref.previewUrl;}};
+    const card=document.createElement("details");card.className="ref compact-ref";card._reference=ref;card.open=!!ref.expanded;card._expandedAtRender=card.open;card.ontoggle=()=>{if(!card.isConnected)return;ref.expanded=card.open;card._expandedAtRender=card.open;if(card.open){const large=card.querySelector(".ref-expanded-preview");if(large&&!large.src)large.src=ref.previewUrl;}};
     card.dataset.referenceIndex=String(index);const head=document.createElement("summary");head.className="refhead";
     const icon=document.createElement("div");icon.className="icon";
     if(ref.previewUrl&&(ref.kind==="image"||ref.kind==="video")){
