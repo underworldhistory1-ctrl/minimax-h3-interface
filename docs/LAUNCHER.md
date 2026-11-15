@@ -233,3 +233,7 @@ A plain GitHub ZIP without build provenance is promoted only when its full tree 
 ## Optional community checkpoints
 
 Linux: append `--checkpoint singularity-v2-int8`; Windows: append `-Checkpoint singularity-v2-int8` to the normal launcher command. This adds the pinned 20,967,647,456-byte v2 pruned INT8 file only when explicitly requested; the older `singularity-int8` option still selects v1.3. Preflight reports uncached bytes. In Studio select Singularity, then the installed checkpoint. Pika Ref2VA variants support this exact v2 checkpoint in References. GPU quality and memory requirements remain unverified for the new combination.
+
+### Optional Qwen 2.1 Turbo
+
+Use `--qwen-image-profiles int8,turbo_int8` to prepare baseline and official Turbo with a shared encoder/VAE. Turbo adds a separate pinned diffusion checkpoint; it does not enable video Turbo or ControlNet. Studio uses its required eight-step manual schedule. [Qwen controls and limits](QWEN_REFERENCE_WORKSPACE.md).

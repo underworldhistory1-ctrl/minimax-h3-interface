@@ -22,8 +22,8 @@
     });
   }
   async function save(references){
-    if(root.H3TabDraftStore)return root.H3TabDraftStore.save('image.references',references.map(ref=>({id:ref.id,file:ref.file,name:ref.name,width:ref.width,height:ref.height})));
-    const snapshot=references.map(ref=>({id:ref.id,file:ref.file,name:ref.name,width:ref.width,height:ref.height}));
+    if(root.H3TabDraftStore)return root.H3TabDraftStore.save('image.references',references.map(ref=>({id:ref.id,file:ref.file,name:ref.name,width:ref.width,height:ref.height,role:ref.role||"context",instructions:ref.instructions||""})));
+    const snapshot=references.map(ref=>({id:ref.id,file:ref.file,name:ref.name,width:ref.width,height:ref.height,role:ref.role||"context",instructions:ref.instructions||""}));
     const db=await open();
     return new Promise((resolve,reject)=>{
       const transaction=db.transaction('draft','readwrite');

@@ -8,6 +8,18 @@ from qwen_image import ModelFile
 
 
 class QwenDownloaderTests(unittest.TestCase):
+    def test_turbo_opt_in_is_accepted_and_shares_existing_encoder_and_vae(self):
+        from deploy import launcher, launcher_models
+        args = launcher.parser().parse_args(["--qwen-image-profiles", "int8,turbo_int8", "--no-controlnet"])
+        self.assertEqual(args.qwen_image_profiles, "int8,turbo_int8")
+        files = downloader.selected_files(downloader.parse_profiles(args.qwen_image_profiles))
+        self.assertEqual(len(files), 4)
+        self.assertEqual(sum(item.name.startswith("qwen3vl") for item in files), 1)
+        artifacts = launcher_models.manifest(qwen_profiles=args.qwen_image_profiles, controlnet=False)
+        turbo = [item for item in artifacts if "qwen_image_2.1_turbo" in item.relative_path]
+        self.assertEqual(len(turbo), 1)
+        self.assertIn(downloader.MODEL_REVISION, turbo[0].url)
+
     def test_profile_parser_deduplicates_and_rejects_unknown_values(self):
         self.assertEqual(downloader.parse_profiles(" INT8,bf16,int8 "), ("int8", "bf16"))
         self.assertEqual(downloader.parse_profiles(""), ())

@@ -5,6 +5,44 @@ from unittest.mock import patch
 
 
 class QwenImageContractTests(unittest.TestCase):
+    def test_all_ten_images_negative_prompt_and_cache_are_connected(self):
+        graph = self.module().build_qwen_graph({"mode": "edit", "prompt": "Combine <image1> with <image10>",
+            "negative_prompt": "watermark", "cache_device": "cpu", "cache_dtype": "int8"},
+            [f"ref{i}.png" for i in range(10)], "multi")
+        self.assertEqual(graph["enc"]["inputs"]["negative_prompt"], "watermark")
+        self.assertEqual(graph["cache"]["inputs"]["device"], "cpu")
+        self.assertEqual(graph["cache"]["inputs"]["dtype"], "int8")
+        for i in range(1, 11):
+            link = graph["enc"]["inputs"][f"images.image_{i}"]
+            if i > 1:
+                link = graph[link[0]]["inputs"]["image"]
+            self.assertEqual(graph[link[0]]["inputs"]["image"], f"ref{i-1}.png")
+
+    def test_invalid_cache_settings_are_rejected(self):
+        for values in [{"cache_device": "cuda"}, {"cache_dtype": "fp4"}]:
+            with self.assertRaisesRegex(ValueError, "cache"):
+                self.module().build_qwen_graph({"prompt": "x", **values}, [], "bad")
+
+    def test_turbo_uses_official_eight_step_schedule_and_shared_encoder(self):
+        qwen = self.module()
+        for mode, uploads in [("create", []), ("edit", ["a.png", "b.png"])]:
+            graph = qwen.build_qwen_graph({"prompt": "A vase", "profile": "turbo_int8", "mode": mode}, uploads, "turbo")
+            self.assertEqual(graph["sampler"]["class_type"], "SamplerCustomAdvanced")
+            self.assertEqual(graph["sigmas"]["inputs"]["sigmas"], qwen.TURBO_SIGMAS)
+            self.assertEqual(len(qwen.TURBO_SIGMAS.split(",")), 9)
+            self.assertEqual(graph["guider"]["inputs"]["cfg"], 1)
+            self.assertEqual(graph["noise"]["inputs"]["noise_seed"], 42)
+            self.assertEqual(graph["clip"]["inputs"]["clip_name"], qwen.MODEL_PROFILES["int8"]["clip"])
+        for values in [{"negative_prompt": "x"}, {"cfg": 2}, {"lora": qwen.QWEN_LORA_FILE}]:
+            with self.assertRaisesRegex(ValueError, "Turbo requires"):
+                qwen.build_qwen_graph({"prompt": "x", "profile": "turbo_int8", **values}, [], "turbo")
+
+    def test_negative_prompt_cannot_be_silently_ignored(self):
+        graph = self.module().build_qwen_graph({"prompt": "x", "negative_prompt": "text"}, [], "negative")
+        self.assertGreater(graph["sampler"]["inputs"]["cfg"], 1)
+        with self.assertRaisesRegex(ValueError, "above 1"):
+            self.module().build_qwen_graph({"prompt": "x", "negative_prompt": "text", "cfg": 1}, [], "negative")
+
     def module(self):
         import qwen_image
 
@@ -32,7 +70,7 @@ class QwenImageContractTests(unittest.TestCase):
 
     def test_model_profiles_have_exact_three_file_sets(self):
         qwen = self.module()
-        self.assertEqual(set(qwen.MODEL_PROFILES), {"int8", "bf16"})
+        self.assertEqual(set(qwen.MODEL_PROFILES), {"int8", "bf16", "turbo_int8", "turbo_bf16"})
         self.assertEqual(qwen.MODEL_PROFILES["int8"]["bytes"], 17_283_091_112)
         self.assertEqual(qwen.MODEL_PROFILES["bf16"]["bytes"], 32_440_124_920)
         for profile in qwen.MODEL_PROFILES.values():

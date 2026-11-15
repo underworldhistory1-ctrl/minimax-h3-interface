@@ -12,7 +12,7 @@ param(
     [switch]$ControlNet,
     [switch]$Refine,
     [switch]$SkipRefine,
-    [ValidateSet("", "int8", "bf16", "int8,bf16")][string]$QwenImageProfiles = "int8",
+    [string]$QwenImageProfiles = "int8",
     [string[]]$ModelsRoot = @(),
     [switch]$Turbo,
     [switch]$Matlow,

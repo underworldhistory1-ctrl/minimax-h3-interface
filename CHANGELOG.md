@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.17.0 — Qwen reference workspace (2026-11-15)
+
+- Upgrade the existing image workspace with per-reference roles/instructions, task workflows, resolved prompt/input preview, negative prompt and native reference cache controls.
+- Preserve reference guidance and extra controls across refresh; remap native tokens during reorder/removal and update instruction mentions during rename.
+- Add Edit in Qwen and Add as reference for generated images, without automatic generation or deleting originals.
+- Add optional official Qwen Turbo INT8/BF16 profiles, pinned hashes, eight-step Euler/manual-sigma graphs and explicit adapter/negative/guidance compatibility checks. Baseline remains the default.
+- Include LoadImage in image readiness and add ten-image browser wiring acceptance to CI. No new model pack is required. Roles/masks remain prompt guidance; GPU quality needs separate output review.
+- See [Qwen behavior, upstream sources and verification boundaries](docs/QWEN_REFERENCE_WORKSPACE.md).
+
+
 ## 2.16.0 - 2026-11-10
 
 - Preserve delayed reference-audio timelines during upload, including already-24-fps video.

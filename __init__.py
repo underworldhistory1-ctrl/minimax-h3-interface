@@ -845,9 +845,14 @@ async def image_readiness(request):
     profiles = qwen_profile_status(comfy_root, folder_paths_module=folder_paths)
     import nodes
     available = {name: name in nodes.NODE_CLASS_MAPPINGS for name in required_qwen_nodes()}
+    turbo_nodes = ("ManualSigmas", "KSamplerSelect", "RandomNoise", "CFGGuider", "SamplerCustomAdvanced")
+    turbo_available = {name: name in nodes.NODE_CLASS_MAPPINGS for name in turbo_nodes}
+    for key, profile in profiles.items():
+        if key.startswith("turbo_"):
+            profile["ready"] = profile["ready"] and all(turbo_available.values())
     return web.json_response({
         "profiles": profiles,
-        "nodes": available,
+        "nodes": {**available, **turbo_available},
         "ready": any(item["ready"] for item in profiles.values()) and all(available.values()),
     })
 

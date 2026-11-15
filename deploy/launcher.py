@@ -780,6 +780,10 @@ def start_server(api, root, python, args, runner, state, save):
 
 
 def parser():
+    try:
+        from .download_qwen_image_models import profile_argument
+    except ImportError:
+        from download_qwen_image_models import profile_argument
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument('--ui-update', help=argparse.SUPPRESS)
     result.add_argument('--ui-update-staged', action='store_true', help=argparse.SUPPRESS)
@@ -798,7 +802,7 @@ def parser():
     result.add_argument("--hybrid", action="store_true", help="Prepare the pinned community hybrid loader (no new model downloads)")
     result.add_argument("--update-policy", choices=('latest','notify','verified'), default='latest', help="Automatically update official main (default), notify only, or apply manifest-approved commits")
     result.add_argument("--video-only", action="store_true", help="Omit Qwen Image weights")
-    result.add_argument("--qwen-image-profiles", choices=("", "int8", "bf16", "int8,bf16"), default=os.environ.get("QWEN_IMAGE_PROFILES", "int8"))
+    result.add_argument("--qwen-image-profiles", type=profile_argument, default=os.environ.get("QWEN_IMAGE_PROFILES", "int8"))
     result.add_argument("--no-controlnet", action="store_true")
     result.add_argument("--no-refine", action="store_true")
     result.add_argument("--refine", action="store_true", help=argparse.SUPPRESS)

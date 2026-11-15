@@ -59,4 +59,9 @@ const path=require('node:path');
     console.log(JSON.stringify({passed:true,checks:['Qwen create graph queued once despite overlapping readiness checks','seed zero and defined generation epoch','uploaded image edit graph queued','standby reason and disabled generation','running cancellation refuses global interrupt','queued cancellation verifies removal','lost acknowledgement retains inputs and recovers by token'],errors},null,2));
   }catch(error){console.error(error.stack);if(stderr)console.error(stderr);if(page) console.error(await page.locator('#error').textContent());process.exitCode=1;}
   finally{if(browser)await browser.close();server.kill();}
+  if(!process.exitCode){
+    const result=require('node:child_process').spawnSync(process.execPath,[path.join(__dirname,'qwen-reference-browser.cjs')],{stdio:'inherit',env:process.env,windowsHide:true});
+    if(result.error)throw result.error;
+    if(result.status!==0)process.exitCode=result.status||1;
+  }
 })();

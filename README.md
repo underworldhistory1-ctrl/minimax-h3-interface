@@ -2,7 +2,7 @@
 
 **MiniMax H3 video with native audio. Qwen Image 2.1 creation and editing. One browser workspace on your own NVIDIA machine or GPU server.**
 
-Current software: **2.16.0** · [Install](docs/INSTALL.md) · [Launcher](docs/LAUNCHER.md) · [Compatibility](docs/COMPATIBILITY_MATRIX.md) · [Changelog](CHANGELOG.md)
+Current software: **2.17.0** · [Install](docs/INSTALL.md) · [Launcher](docs/LAUNCHER.md) · [Compatibility](docs/COMPATIBILITY_MATRIX.md) · [Changelog](CHANGELOG.md)
 
 [![Superman above Earth — watch with audio](docs/demo/superman/video-poster.jpg)](docs/demo/superman/superman-excerpt.mp4)
 
@@ -37,7 +37,7 @@ Start directly in Production, write a prompt, attach inputs and generate. **Save
 | Set timed images | Temporal guides at selected frames, when native capability is present |
 | Guide structure or motion | Optional Fun-ControlNet 2.0 and installed pose/depth/outline/lighting extractors |
 | Continue or refine | Saved AV context, optional latent refinement and generated-audio enhancement under compatibility checks |
-| Create supporting images | Separate Qwen Image 2.1 create/edit workspace with references and optional image LoRA |
+| Create supporting images | Qwen Image 2.1 with ten references, per-image roles/instructions, task workflows and image LoRA |
 | Keep and reuse work | Projects, scenes, shots, Elements, saved settings, independent Reuse setups and portable ZIP exports |
 | Enlarge an approved take | CPU Lanczos export with copied audio, without another diffusion render |
 
@@ -59,6 +59,8 @@ Studio compiles the current setup into a connected ComfyUI graph. Shared fronten
 Choose installed Pika variants in **Model configuration > Pika Flex Turbo**. Secondary dynamic physics (`wushu_spatial_physics`) and object consistency (`H3-Licon-VBVR`) LoRAs are stackable alongside Pika and Singularity v2. FaceRefine is not part of this release; unfinished controls are omitted and unsupported API requests are rejected. Creative LoRAs stay in their own section. Switching to Singularity prefers the installed v2 checkpoint while preserving compatible Pika References settings. Explicitly restored checkpoint choices remain unchanged.
 
 This is deterministic configuration coordination. It does not infer the training requirements of every unknown LoRA or search for an artistically optimal result. Required settings are automated; scene-specific strengths, prompts and quality/speed tradeoffs still need output review. See [selection rules and Matlow setup](docs/MATLOW_AND_SELECTIONS.md), [graph contract](docs/GRAPH_MAP.md), [Pika](docs/PIKA_FLEX.md) and [Turbo](docs/TURBO_V4.md).
+
+Qwen references now have independent roles and instructions, task workflows, a resolved prompt preview, negative prompt and reference-cache controls. Generated images can be edited or appended as references without leaving Qwen. [Image workspace behavior and limits](docs/QWEN_REFERENCE_WORKSPACE.md).
 
 ## Models and acceleration
 
@@ -105,7 +107,7 @@ Generations/Favorites use the selected scope, offer direct downloads and search 
 
 The launcher follows official main by default, verifies provenance/ancestry, preserves local edits and waits for accepted work, preparation and exports before replacing runtime. Supported code-only updates are available through **Updates**; environment changes need the full launcher. Restart when idle after installing code. Never interrupt an active render. [Upgrade/rollback](docs/V2_UPGRADE.md) · [Safe uninstall](docs/UNINSTALL.md).
 
-Source tests, local API/browser checks and GPU rendering are reported separately. [Current verification](docs/RELEASE_2_16.md) covers Python/JavaScript regressions, connected graph matrices, real-API browser journeys with simulated inference, and release archive integrity. Windows/Linux CI and browser acceptance run on each update; check [Actions](https://github.com/underworldhistory1-ctrl/minimax-h3-interface/actions/workflows/verify.yml) for the exact commit.
+Source tests, local API/browser checks and GPU rendering are reported separately. [Current verification](docs/RELEASE_2_17.md) covers Python/JavaScript regressions, connected graph matrices, real-API browser journeys with simulated inference, and release archive integrity. Windows/Linux CI and browser acceptance run on each update; check [Actions](https://github.com/underworldhistory1-ctrl/minimax-h3-interface/actions/workflows/verify.yml) for the exact commit.
 
 On 10 November 2026, the repository owner confirmed that rendering and their exercised workflows worked correctly. This is owner-reported runtime acceptance; the source audit does not attach new GPU logs or claim coverage of every possible combination. Earlier captured output evidence remains in the [historical GPU report](docs/PRODUCTION_READINESS_2026_10_15.md).
 

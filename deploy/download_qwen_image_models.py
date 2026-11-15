@@ -19,7 +19,7 @@ from qwen_image import MODEL_PROFILES, ModelFile  # noqa: E402
 
 
 MODEL_REPO = "Comfy-Org/Qwen-Image-2.1"
-MODEL_REVISION = "9a44dbdb47cefd046be9c0a13476192f34c8db8e"
+MODEL_REVISION = "aacf31a6d48e707f352ecba714cee0680da3479b"
 HEADROOM_BYTES = 5 * 1024**3
 
 
@@ -43,6 +43,11 @@ def selected_files(profiles: tuple[str, ...]) -> tuple[ModelFile, ...]:
         for item in MODEL_PROFILES[profile]["files"]:
             unique[(item.folder, item.name)] = item
     return tuple(unique.values())
+
+
+def profile_argument(value):
+    """Argparse-compatible canonical profile list, including optional Turbo."""
+    return ",".join(parse_profiles(value))
 
 
 def file_digest(path: Path) -> str:
@@ -121,7 +126,7 @@ def install_profiles(comfy_root: Path, profiles: tuple[str, ...], offline_check:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("comfy_root", type=Path)
-    parser.add_argument("--profiles", help="Comma separated profiles: int8,bf16")
+    parser.add_argument("--profiles", help="Comma separated profiles: int8,bf16,turbo_int8,turbo_bf16")
     parser.add_argument("--offline-check", action="store_true")
     args = parser.parse_args()
     profiles = parse_profiles(args.profiles)

@@ -423,7 +423,11 @@ def main():
     parser.add_argument("--no-refine", dest="refine", action="store_false", help="Explicitly skip refinement dependencies")
     parser.add_argument("--controlnet", action="store_true", help="Install optional hash-pinned ControlNet 2.0 weights")
     parser.add_argument("--no-start", action="store_true")
-    parser.add_argument("--qwen-image-profiles", default="", choices=("", "int8", "bf16", "int8,bf16"))
+    try:
+        from .download_qwen_image_models import profile_argument
+    except ImportError:
+        from download_qwen_image_models import profile_argument
+    parser.add_argument("--qwen-image-profiles", default="", type=profile_argument)
     parser.add_argument("--preflight", action="store_true", help="Read-only local check; never downloads or changes files")
     args = parser.parse_args()
     if not sys.platform.startswith("win"):
