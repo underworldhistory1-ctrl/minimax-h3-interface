@@ -11,6 +11,7 @@ h3_lab/assembly.py
 h3_lab/reference_upload.py
 h3_lab/media_export.py
 h3_lab/runtime_attention.py
+deploy/performance_report.py
 h3_lab/assets.py
 h3_lab/capabilities.py
 h3_lab/contexts.py

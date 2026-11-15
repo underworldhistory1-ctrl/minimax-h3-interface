@@ -119,10 +119,13 @@ def recover(comfy, base):
 
 
 def worker_command(python, args):
-    return [str(python), 'main.py', '--listen', args.bind, '--port', str(args.port),
+    command = [str(python), 'main.py', '--listen', args.bind, '--port', str(args.port),
             '--reserve-vram', str(args.reserve_vram), '--cache-ram', '--fp16-intermediates',
             '--use-ck-attention' if getattr(args, 'attention_backend', 'ck-int8') == 'ck-int8'
             else '--use-pytorch-cross-attention']
+    if getattr(args, 'disable_dynamic_vram', False) is True:
+        command.append('--disable-dynamic-vram')
+    return command
 
 
 def worker_python(comfy, override=None):
@@ -144,6 +147,7 @@ def main():
     parser.add_argument('--reserve-vram', type=float, default=3.0)
     parser.add_argument('--comfy-python')
     parser.add_argument('--attention-backend', choices=('pytorch', 'ck-int8'), default='ck-int8')
+    parser.add_argument('--disable-dynamic-vram', action='store_true')
     args = parser.parse_args()
     if fcntl is None:
         parser.error('The worker supervisor requires Linux/POSIX file locking')

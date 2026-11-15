@@ -28,7 +28,7 @@ SOURCE_FILES = (
     "deploy/download_h3_models.py", "deploy/download_qwen_image_models.py", "deploy/install_windows.py",
     "deploy/download_optional_loras.py", "deploy/make_h3_landing.py",
     "deploy/provision_h3.py", "deploy/activate_h3.py", "deploy/verify_h3_server.py",
-    "deploy/backup_h3_library.py", "deploy/restore_h3_library.py",
+    "deploy/backup_h3_library.py", "deploy/restore_h3_library.py", "docs/PERFORMANCE_DIAGNOSIS.md",
     "deploy/build_final_folder.py", "deploy/CLOUD_BOOTSTRAP.md", "deploy/SALAD_DEPLOYMENT.md",
     "deploy/salad/entrypoint.sh", "deploy/salad/nginx.conf.template",
     "scripts/verify_h3_video.py", "scripts/studio_preview.py", "tests/e2e/README.md", "docs/UX_FLOW.md", "docs/GRAPH_MAP.md",

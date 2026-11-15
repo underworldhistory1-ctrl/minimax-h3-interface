@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.17.2 — Diagnose slow sampling while retaining CK attention (2026-11-15)
+
+- Keep native Comfy Kitchen INT8 attention and the default memory policy unchanged.
+- Add a read-only performance report with workload controls, actual loaded attention, memory-policy flags and RAM/VRAM gauges, excluding prompt/media/job/authentication data.
+- Expose upstream estimate-based loading as an opt-in `--disable-dynamic-vram` / Windows `-DisableDynamicVram` comparison. Preserve it through the Linux supervisor and verify the loaded setting before accepting a worker.
+- Document the reported 5090 slowdown, source history, evidence gaps and controlled diagnosis. No unmeasured speed repair or affected-machine benchmark is claimed.
+
 ## 2.17.1 — Recognize official installed releases (2026-11-15)
 
 - Add canonical runtime blob hashes from official 2.16.0 and 2.17.0 commits. Staged UI upgrades can recognize the previous release instead of falsely treating its files as local edits.

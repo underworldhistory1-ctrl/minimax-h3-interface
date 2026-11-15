@@ -9,6 +9,7 @@ param(
     [switch]$NoUpdate,
     [ValidateSet("latest", "notify", "verified")][string]$UpdatePolicy = "latest",
     [ValidateSet("ck-int8", "pytorch")][string]$AttentionBackend = "ck-int8",
+    [switch]$DisableDynamicVram,
     [switch]$ControlNet,
     [switch]$Refine,
     [switch]$SkipRefine,
@@ -83,6 +84,7 @@ if (-not $hostPython) {
 }
 $arguments = @($installer, "--port", "$Port", "--bind", $Bind, "--update-policy", $UpdatePolicy, "--attention-backend", $AttentionBackend)
 if ($ComfyRoot) { $arguments += @("--comfy-root", $ComfyRoot) }
+if ($DisableDynamicVram) { $arguments += "--disable-dynamic-vram" }
 if ($ComfyPython) { $arguments += @("--comfy-python", $ComfyPython) }
 if ($Preflight) { $arguments += "--preflight" }
 if ($NoStart) { $arguments += "--no-start" }
