@@ -673,14 +673,25 @@ def attention_ready(ready, args):
             and actual.get('implementation') == expected[selected_attention(args)])
 
 
+def memory_ready(ready, args):
+    requested = getattr(args, 'disable_dynamic_vram', False) is True
+    memory = ready.get('memory', {})
+    if memory.get('source') != 'loaded_runtime':
+        return not requested  # Older workers cannot verify the explicit opt-out.
+    return memory.get('disable_dynamic_vram') is requested
+
+
 def server_command(root, python, args, platform=None):
     """Keep the selected interpreter and launch policy across worker restarts."""
     platform = os.name if platform is None else platform
     if platform != 'nt':
-        return [str(python), str(PROJECT / 'deploy/openbayes_h3_supervisor.py'),
+        command = [str(python), str(PROJECT / 'deploy/openbayes_h3_supervisor.py'),
                 '--comfy-root', str(root), '--comfy-python', str(python),
                 '--bind', args.bind, '--port', str(args.port), '--reserve-vram', '3.0',
                 '--attention-backend', selected_attention(args)]
+        if getattr(args, 'disable_dynamic_vram', False) is True:
+            command.append('--disable-dynamic-vram')
+        return command
     command = [str(python), str(root / 'main.py'), '--listen', args.bind, '--port', str(args.port),
                '--reserve-vram', '3.0',
                '--use-ck-attention' if selected_attention(args) == 'ck-int8' else '--use-pytorch-cross-attention']
@@ -688,6 +699,8 @@ def server_command(root, python, args, platform=None):
         command.append('--windows-standalone-build')
     else:
         command += ['--cache-ram', '--fp16-intermediates']
+    if getattr(args, 'disable_dynamic_vram', False) is True:
+        command.append('--disable-dynamic-vram')
     return command
 
 
@@ -732,7 +745,7 @@ def start_server(api, root, python, args, runner, state, save):
         expected = loaded_source_fingerprint(root)
         already_loaded = (isinstance(before, dict) and before.get("runtime_fingerprint") == expected
                           and before.get("acceleration", {}).get("native_cuda_ready") is True
-                          and attention_ready(before, args) and interpreter_ready(before, python))
+                          and attention_ready(before, args) and interpreter_ready(before, python) and memory_ready(before, args))
         pending = state.get("restart_pending", False)
         if already_loaded and (not pending or previous_instance != state.get("pre_update_instance")):
             state["restart_pending"] = False
@@ -740,7 +753,7 @@ def start_server(api, root, python, args, runner, state, save):
             return
         from importlib import import_module
         lifecycle = import_module('deploy.worker_lifecycle' if __package__ else 'worker_lifecycle')
-        launch_changed = not attention_ready(before, args) or not interpreter_ready(before, python)
+        launch_changed = not attention_ready(before, args) or not interpreter_ready(before, python) or not memory_ready(before, args)
         replaced = False
         if pending or launch_changed:
             replaced = lifecycle.stop_owned_supervisor(root, PROJECT, api, args.start_timeout)
@@ -749,7 +762,7 @@ def start_server(api, root, python, args, runner, state, save):
             spawn_server(root, python, args, state, save)
         else:
             if launch_changed:
-                raise RuntimeError('The existing worker has different attention/interpreter arguments and is not a verified launcher-owned supervisor. Stop it when idle, then rerun the same launcher command; no unknown process was stopped.')
+                raise RuntimeError('The existing worker has different attention/interpreter or memory arguments and is not a verified launcher-owned supervisor. Stop it when idle, then rerun the same launcher command; no unknown process was stopped.')
             try:
                 api.request('/v2/manager/reboot', {})
             except Exception as error:
@@ -768,7 +781,7 @@ def start_server(api, root, python, args, runner, state, save):
                     and ready.get("runtime_instance") and ready["runtime_instance"] != previous_instance
                     and ready.get("runtime_fingerprint") == loaded_source_fingerprint(root)
                     and ready.get("acceleration", {}).get("native_cuda_ready") is True
-                    and attention_ready(ready, args) and interpreter_ready(ready, python)):
+                    and attention_ready(ready, args) and interpreter_ready(ready, python) and memory_ready(ready, args)):
                 state["restart_pending"] = False
                 state["loaded_runtime_instance"] = ready["runtime_instance"]
                 save()
@@ -785,6 +798,8 @@ def parser():
     except ImportError:
         from download_qwen_image_models import profile_argument
     result = argparse.ArgumentParser(description=__doc__)
+    result.add_argument('--disable-dynamic-vram', action='store_true',
+                        help='Opt-in estimate-based loading for a matched memory-performance comparison; not a universal speed fix')
     result.add_argument('--ui-update', help=argparse.SUPPRESS)
     result.add_argument('--ui-update-staged', action='store_true', help=argparse.SUPPRESS)
     result.add_argument("--comfy-root")
@@ -939,6 +954,7 @@ def _main():
     config = {"root": str(root), "url": url, "turbo": args.turbo,
               "checkpoint": args.checkpoint, "hybrid": args.hybrid, "update_policy": args.update_policy,
               "bind": args.bind, "attention_backend": args.attention_backend, "environment_id": environment_identity(),
+              "disable_dynamic_vram": args.disable_dynamic_vram,
               "refine": not args.no_refine, "controlnet": not args.no_controlnet,
               "qwen": args.qwen_image_profiles, "source_version": source_version()}
     config.update(python=str(python) if python else None, model_roots=list(map(str, roots)), port=args.port)

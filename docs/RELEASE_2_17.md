@@ -1,6 +1,12 @@
-# 2.17.1 — Qwen reference workspace and upgrade repair
+# 2.17.2 — Qwen reference workspace and runtime diagnostics
 
 This release updates the existing Create Image workspace and retains the baseline H3/video paths. [Controls and limits](QWEN_REFERENCE_WORKSPACE.md) describes reference semantics, persistence, optional Turbo and upstream sources.
+
+## 2.17.2 performance follow-up
+
+Native CK INT8 attention remains the default. The [performance guide](PERFORMANCE_DIAGNOSIS.md) records the 5090 report, relevant earlier source changes and remaining evidence gaps. Read-only reports now expose loaded memory flags and selected workload controls. An opt-in estimate-loading comparison propagates through Windows and Linux workers and cannot silently reuse a mismatched worker. This supplies diagnosis and a controlled test, not proof of the reporter's root cause or restored speed. Canonical 2.17.1 runtime hashes retain safe official upgrades.
+
+Verification includes eight new CPU regressions for report privacy/partial failures/numeric handling, worker propagation and loaded-policy mismatch; Windows/Linux full-suite CI, JavaScript and browser acceptance remain release gates. A real local fixture API produced a complete report; an offline endpoint produced an explicitly incomplete report. No new GPU inference was run for this follow-up.
 
 ## Changes
 
@@ -13,7 +19,7 @@ This release updates the existing Create Image workspace and retains the baselin
 - Optional official Turbo INT8/BF16 checkpoints, shared encoder/VAE and eight-step Euler/manual-sigma graphs. Baseline steps survive profile switching and refresh.
 - Existing launcher/downloader opt-in supports Turbo, with pinned revision, expected sizes and SHA-256. Baseline remains the default; no ControlNet download is required.
 
-## Local verification (15 November 2026)
+## 2.17.0/2.17.1 local verification (15 November 2026)
 
 - Python: 629 tests, OK, two platform-specific skips on Windows.
 - JavaScript: 344 tests passed.

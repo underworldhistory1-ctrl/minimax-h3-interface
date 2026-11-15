@@ -57,3 +57,35 @@ def runtime_root_identity(root):
     from pathlib import Path
     value = os.path.normcase(str(Path(root).resolve()))
     return hashlib.sha256(value.encode('utf-8')).hexdigest()
+
+
+def runtime_memory(modules=None):
+    """Read loaded settings and memory gauges; never export argv or run inference."""
+    modules = sys.modules if modules is None else modules
+    args = getattr(modules.get('comfy.cli_args'), 'args', None)
+    result = {'source': 'loaded_runtime' if args is not None else 'unknown'}
+    if args is not None:
+        for key in ('disable_dynamic_vram', 'disable_async_offload', 'disable_pinned_memory',
+                    'disable_smart_memory', 'fp16_intermediates', 'highvram', 'lowvram',
+                    'novram', 'cpu', 'gpu_only', 'fast_disk', 'disable_fast_disk'):
+            result[key] = bool(getattr(args, key, False))
+        reserve = getattr(args, 'reserve_vram', None)
+        result['reserve_vram_gb'] = reserve if isinstance(reserve, (int, float)) else None
+    management = modules.get('comfy.model_management')
+    loaded = getattr(management, 'current_loaded_models', None)
+    if isinstance(loaded, (list, tuple)):
+        result['loaded_models'] = len(loaded)
+        try:
+            result['loaded_dynamic_models'] = sum(bool(item.model.is_dynamic()) for item in loaded)
+        except (AttributeError, RuntimeError, TypeError):
+            result['loaded_dynamic_models'] = None
+    psutil = modules.get('psutil')
+    if psutil is not None:
+        try:
+            memory = psutil.virtual_memory()
+            result.update(ram_total_bytes=memory.total, ram_available_bytes=memory.available,
+                          process_rss_bytes=psutil.Process().memory_info().rss,
+                          swap_percent=psutil.swap_memory().percent)
+        except (OSError, RuntimeError, AttributeError, psutil.Error):
+            pass
+    return result

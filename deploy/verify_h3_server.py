@@ -124,6 +124,7 @@ def main():
         "native_cuda_ready": native_cuda_ready,
         "acceleration": ready.get("acceleration", {}),
         "attention": ready.get("attention", {}),
+        "memory": ready.get("memory", {}),
         "v2_ready": not missing_v2,
         "v2_problems": missing_v2,
         "missing_models": missing_models,

@@ -104,6 +104,8 @@ CUDA 12.x environments must be repaired before the launcher declares readiness.
 Linux launch paths use ComfyUI RAM-pressure caching rather than disabling all
 node-result reuse. This cache evicts under RAM pressure and is separate from the
 user-selected Spectrum/MotionCache approximation methods.
+For slow sampling, use the [read-only performance report and matched memory-loading test](PERFORMANCE_DIAGNOSIS.md).
+`--disable-dynamic-vram` (Windows `-DisableDynamicVram`) is opt-in and retains CK INT8 attention. It is not a universal speed optimization.
 Maintenance writes a fixed-root .h3-launcher/maintenance.json barrier even
 when reports use --state-dir. Admission closes before runtime mutation; the
 launcher then waits for already admitted HTTP handlers, background operations and

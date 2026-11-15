@@ -18,7 +18,7 @@ class LauncherTests(unittest.TestCase):
             target = root / "runtime"
             target.mkdir()
             with patch.object(launcher, "runtime_target", return_value=target), patch.object(launcher, "runtime_files", return_value=["VERSION"]):
-                for content in (b"2.16.0\n", b"2.17.0\n"):
+                for content in (b"2.16.0\n", b"2.17.0\n", b"2.17.1\n"):
                     (target / "VERSION").write_bytes(content)
                     launcher.protect_runtime_edits(root)
                 (target / "VERSION").write_bytes(b"2.16.0-custom\n")
