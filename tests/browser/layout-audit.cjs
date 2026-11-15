@@ -30,11 +30,14 @@ let browser;
  await page.locator('#newProjectName').fill('Usability regression');await page.locator('#projectHubCreate').click();
  await page.waitForFunction(()=>state.currentProject?.name==='Usability regression'&&!state.projectLoading);
  await page.evaluate(()=>setWorkspaceView('studio'));
- const order=await page.evaluate(()=>[...document.querySelector('.sidebar-scroll').children].map(el=>el.id||el.querySelector('h2,summary')?.textContent||''));
- assert.ok(order.indexOf('projectPanel')<order.indexOf('shotInputsHeading'),'Project comes before shot inputs');
- assert.ok(order.indexOf('Prompt')<order.indexOf('modelConfiguration'),'Prompt comes before advanced model configuration');
- assert.ok(order.indexOf('renderSetupHeading')<order.indexOf('modelConfiguration'));
- assert.ok(order.indexOf('optionalGuidanceHeading')<order.indexOf('sourcePanel'));
+ const hierarchy=await page.evaluate(()=>({
+   stages:[...document.querySelectorAll('.sidebar-scroll > .workspace-stage')].map(el=>el.id),
+   scene:!!document.querySelector('#fold-workspace #projectPanel'),
+   prompt:!!document.querySelector('#fold-shot #prompt'),
+   model:!!document.querySelector('#fold-render #modelConfiguration'),
+   source:!!document.querySelector('#fold-guidance #sourcePanel')
+ }));
+ assert.deepEqual(hierarchy,{stages:['fold-workspace','fold-shot','fold-render','fold-guidance'],scene:true,prompt:true,model:true,source:true});
  await page.locator('#prompt').fill('A steady scene. Preserve this prompt.');
  assert.equal(await page.locator('#guidanceLanguage').count(),0);
  assert.equal(await page.locator('[data-guidance-key=model]').getAttribute('lang'),'en');

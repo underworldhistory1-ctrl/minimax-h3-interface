@@ -1,6 +1,6 @@
 # H3 Interface documentation
 
-Current release: **2.17.0**. [Current verification and scope](RELEASE_2_17.md). The main [README](../README.md) introduces the studio;
+Current release: **2.17.1**. [Current verification and scope](RELEASE_2_17.md). The main [README](../README.md) introduces the studio;
 [CHANGELOG](../CHANGELOG.md) records release history. “H3 Studio” is the workspace
 name used in controls and historical guides; “V2” describes the earlier migration,
 not a separate current product release.

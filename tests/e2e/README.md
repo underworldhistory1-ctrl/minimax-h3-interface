@@ -28,6 +28,6 @@ Image cancellation removes only the identified pending queue entry and verifies 
 `project-settings-browser.cjs` verifies mandatory element names, filename collision isolation, visible actions, catalog removal persistence, empty-input fresh tabs with latest generation controls, reload retention, cross-project isolation and real server storage.
 
 
-GitHub Actions runs the ten self-contained journeys plus connected controls with pinned Playwright 1.65.0. For the connected journey, start `python scripts/studio_preview.py --port 18772` first, run `node tests/e2e/connected-browser-acceptance.cjs`, then stop the localhost fixture. Inference is simulated.
+GitHub Actions runs ten entrypoints (eleven journeys including the nested Qwen multi-reference acceptance) plus connected controls with pinned Playwright 1.65.0. For the connected journey, start `python scripts/studio_preview.py --port 18772` first, run `node tests/e2e/connected-browser-acceptance.cjs`, then stop the localhost fixture. Inference is simulated.
 
 Qwen multi-reference acceptance: `node tests/e2e/qwen-reference-browser.cjs` (port 18779). It uploads ten distinct files, verifies all encoder inputs and role/workflow instructions, refresh persistence, rename/reorder/removal, cache/negative settings and generated-image reuse. Queue execution is simulated.

@@ -35,7 +35,7 @@ function setProgress(label,pct,remaining=null,indeterminate=false){
   $("progressFill").style.width=Math.max(0,Math.min(100,pct||0))+"%";$("progressBar").classList.toggle("busy",indeterminate);
   $("remaining").textContent="Time remaining: "+(remaining===null?"—":fmt(remaining));
 }
-function setBusy(value){const changed=state.busy!==value;state.busy=value;$("generate").disabled=value||!state.ready||!state.referencesReady;$("generate").classList.toggle("hidden",value);$("cancel").classList.toggle("hidden",!value);if(changed)renderRefs();document.querySelectorAll(".left input,.left select,.left textarea,#addReferences").forEach(el=>{if(el.id!=="aspect"&&el.id!=="resolution")el.disabled=value;});updateSettings();}
+function setBusy(value){const changed=state.busy!==value;state.busy=value;$("generate").disabled=value||!state.ready||!state.referencesReady;$("generate").classList.toggle("hidden",value);$("cancel").classList.toggle("hidden",!value);if(changed)renderRefs();document.querySelectorAll(".left input,.left select,.left textarea,#addReferences").forEach(el=>{if(el.id!=="aspect"&&el.id!=="resolution")el.disabled=value;});document.querySelectorAll("#mentionList button,#mentionMenu button,#randomSeed,#editCurrent,#addCurrentReference").forEach(el=>{el.disabled=value;});updateSettings();}
 function dimensions(){return sizeMap[$("resolution").value][$("aspect").value];}
 function outputDimensions(){
   const first=state.refs[0];if(!first||$("customSize").checked||!first.width||!first.height)return dimensions();
@@ -114,12 +114,12 @@ function refreshPromptPreview(){
   catch(error){$("promptPreview").textContent=error.message;}
 }
 $("refreshPromptPreview").onclick=refreshPromptPreview;
-function insertMention(name){const field=$("prompt"),at=field.selectionStart,before=field.value.slice(0,at),match=before.match(/@([\p{L}\p{N}_-]*)$/u),start=match?at-match[0].length:at,token=`@${name} `;field.setRangeText(token,start,at,"end");H3StudioUX.revealControl(field);field.focus();saveDraft();renderMentions();}
+function insertMention(name){if(state.busy||!state.referencesReady)return;const field=$("prompt"),at=field.selectionStart,before=field.value.slice(0,at),match=before.match(/@([\p{L}\p{N}_-]*)$/u),start=match?at-match[0].length:at,token=`@${name} `;field.setRangeText(token,start,at,"end");H3StudioUX.revealControl(field);field.focus();saveDraft();renderMentions();}
 function renderMentions(){
   const field=$("prompt"),list=$("mentionList"),menu=$("mentionMenu");list.replaceChildren();menu.replaceChildren();
-  state.refs.forEach((ref,index)=>{const chip=document.createElement("button");chip.type="button";chip.textContent=`@${ref.name} · image${index+1}`;chip.title=`Insert @${ref.name} into prompt`;chip.onclick=()=>insertMention(ref.name);list.append(chip);});
+  state.refs.forEach((ref,index)=>{const chip=document.createElement("button");chip.type="button";chip.disabled=state.busy;chip.textContent=`@${ref.name} · image${index+1}`;chip.title=`Insert @${ref.name} into prompt`;chip.onclick=()=>insertMention(ref.name);list.append(chip);});
   const before=field.value.slice(0,field.selectionStart),match=before.match(/@([\p{L}\p{N}_-]*)$/u),matches=match?state.refs.filter(ref=>ref.name.toLowerCase().startsWith(match[1].toLowerCase())):[];
-  menu.classList.toggle("is-hidden",!matches.length);matches.forEach(ref=>{const index=state.refs.indexOf(ref),button=document.createElement("button");button.type="button";button.role="option";button.textContent=`@${ref.name} · image${index+1}`;button.onmousedown=event=>event.preventDefault();button.onclick=()=>{insertMention(ref.name);menu.classList.add("is-hidden");};menu.append(button);});
+  menu.classList.toggle("is-hidden",!matches.length);matches.forEach(ref=>{const index=state.refs.indexOf(ref),button=document.createElement("button");button.type="button";button.disabled=state.busy;button.role="option";button.textContent=`@${ref.name} · image${index+1}`;button.onmousedown=event=>event.preventDefault();button.onclick=()=>{insertMention(ref.name);menu.classList.add("is-hidden");};menu.append(button);});
 }
 
 function moveReference(index,direction){
@@ -480,7 +480,7 @@ if($("sendToH3")) $("sendToH3").onclick = async () => {
   }
 };
 $("deleteCurrent").onclick=()=>deleteEntry(state.current);$("refreshLibrary").onclick=()=>loadLibrary(true);$("showMore").onclick=()=>{state.visible+=8;renderLibrary();};
-$("randomSeed").onclick=()=>{$("seed").value=H3RenderValues.randomSeed();saveDraft();};
+$("randomSeed").onclick=()=>{if(state.busy)return;$("seed").value=H3RenderValues.randomSeed();saveDraft();};
 for(const id of [...imageExtraControls,"prompt","aspect","resolution","steps","seed","transparent","referenceResolution","customSize","fitReferences","lora","loraStrength"]){$(id).addEventListener("input",()=>{if(id==="aspect"||id==="resolution")$("customSize").checked=true;updateSettings();saveDraft();if(id==="prompt")renderMentions();refreshPromptPreview();});}
 window.addEventListener("focus",()=>loadLibrary(false));
 state.timer=setInterval(()=>{if(state.busy&&state.started){const elapsed=(Date.now()-state.started)/1000;$("timer").textContent="Elapsed: "+fmt(elapsed);if(!state.lastStepAt)$("remaining").textContent="Time remaining: "+fmt(Math.max(0,estimateSeconds()-elapsed));}},1000);

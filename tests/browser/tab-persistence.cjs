@@ -12,7 +12,7 @@ let browser;const submissions=[];
  const url=new URL(route.request().url());let data;if(url.pathname==='/h3_studio/lab/jobs'&&route.request().method()==='POST'){submissions.push(route.request().postDataJSON());return route.fulfill({status:400,json:{error:'Captured setup; no GPU submission.'}});}
  if(url.pathname.startsWith('/h3_studio/lab/organization')||url.pathname.startsWith('/h3_studio/lab/videos/reuse')||url.pathname.startsWith('/h3_studio/lab/projects')||url.pathname.startsWith('/h3_studio/lab/assets')||url.pathname.startsWith('/h3_studio/lab/media/exports'))return route.continue();
  if(url.pathname.startsWith('/object_info/')){const name=url.pathname.split('/').pop();data={[name]:schemas[name]||{input:{required:{}}}};}
- else if(url.pathname==='/h3_studio/image_readiness')data={ready:true,profiles:{int8:{ready:true},bf16:{ready:true}},nodes:{}};
+ else if(url.pathname==='/h3_studio/image_readiness')data={ready:true,profiles:{int8:{ready:true},bf16:{ready:true}},nodes:{LoadImage:true}};
  else if(url.pathname==='/system_stats')data={devices:[{name:'UI fixture · no inference'}]};
  else if(url.pathname==='/h3_studio/readiness')data={models:{fl2va:true,ref2va:true,text_encoder:true,video_vae:true,audio_vae:true},nodes:Object.fromEntries(['UNETLoader','MiniMaxH3SigmaShift','CLIPLoader','VAELoader','MiniMaxH3ImageToVideo','MiniMaxH3ReferenceToVideo','ConditioningZeroOut','KSampler','VAEDecode','VAEDecodeAudio','CreateVideo','H3SaveVideo','H3ReleaseForDecode','H3LoadSavedLatent','SaveVideo','LoadImage','LoadVideo','GetVideoComponents','LoadAudio','LoraLoaderModelOnly','SpectrumApplyMiniMaxH3','MiniMaxH3MotionCache','ImageCrop','ImageScale','ImageFromBatch','TrimAudioDuration'].map(x=>[x,true])),quality:{h3_vae_tile_fix:true}};
  else if(url.pathname==='/h3_studio/lab/capabilities')data=caps;
@@ -29,6 +29,7 @@ let browser;const submissions=[];
  const url='http://127.0.0.1:18925/web/index.html';
  const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jM1sAAAAASUVORK5CYII=','base64');
  await page.goto(url);await page.waitForFunction(()=>projectCtrl&&!state.projectLoading&&state.nodesReady);
+ await page.evaluate(()=>H3StudioUX.revealControl(document.getElementById('sceneName')));
  await page.locator('#sceneName').fill('Tab persistence');await page.locator('#btnSaveProject').click();await page.waitForFunction(()=>!state.projectLoading&&state.currentProject);
  const pid=await page.evaluate(()=>state.activeProjectId);
  await page.locator('.mode[data-mode=refs]').click();await page.evaluate(()=>state.pendingRefKind='image');await page.locator('#refFile').setInputFiles([{name:'Hero.png',mimeType:'image/png',buffer:png},{name:'Room.png',mimeType:'image/png',buffer:png}]);await page.waitForFunction(()=>state.refs.length===2);
