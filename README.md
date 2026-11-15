@@ -2,7 +2,7 @@
 
 **MiniMax H3 video with native audio. Qwen Image 2.1 creation and editing. One browser workspace on your own NVIDIA machine or GPU server.**
 
-Current software: **2.17.0** · [Install](docs/INSTALL.md) · [Launcher](docs/LAUNCHER.md) · [Compatibility](docs/COMPATIBILITY_MATRIX.md) · [Changelog](CHANGELOG.md)
+Current software: **2.17.1** · [Install](docs/INSTALL.md) · [Launcher](docs/LAUNCHER.md) · [Compatibility](docs/COMPATIBILITY_MATRIX.md) · [Changelog](CHANGELOG.md)
 
 [![Superman above Earth — watch with audio](docs/demo/superman/video-poster.jpg)](docs/demo/superman/superman-excerpt.mp4)
 

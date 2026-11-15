@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.17.1 — Recognize official installed releases (2026-11-15)
+
+- Add canonical runtime blob hashes from official 2.16.0 and 2.17.0 commits. Staged UI upgrades can recognize the previous release instead of falsely treating its files as local edits.
+- Disable mention/seed/result-reuse controls during image generation and guard their handlers so the saved draft cannot drift from captured active settings.
+- Keep custom-file protection unchanged. A regression accepts both official version files and rejects a custom version.
+- Correct release manifest metadata to include all four Qwen profiles and the current pinned model revision.
+- Current rental: official Turbo checkpoint SHA-256 verified; one native eight-step GPU graph with ten distinct uploaded synthetic references completed successfully and its 512×512 PNG fully decoded. This verifies that particular wiring path, not general visual quality.
+
+
 ## 2.17.0 — Qwen reference workspace (2026-11-15)
 
 - Upgrade the existing image workspace with per-reference roles/instructions, task workflows, resolved prompt/input preview, negative prompt and native reference cache controls.

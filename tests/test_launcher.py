@@ -12,6 +12,19 @@ from deploy.worker_lifecycle import interpreter_identity
 
 
 class LauncherTests(unittest.TestCase):
+    def test_previous_official_release_versions_upgrade_without_blessing_custom_edits(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "runtime"
+            target.mkdir()
+            with patch.object(launcher, "runtime_target", return_value=target), patch.object(launcher, "runtime_files", return_value=["VERSION"]):
+                for content in (b"2.16.0\n", b"2.17.0\n"):
+                    (target / "VERSION").write_bytes(content)
+                    launcher.protect_runtime_edits(root)
+                (target / "VERSION").write_bytes(b"2.16.0-custom\n")
+                with self.assertRaisesRegex(RuntimeError, "customized"):
+                    launcher.protect_runtime_edits(root)
+
     def setUp(self):
         # Coordinator tests isolate network preparation; test_matlow covers packs.
         preparation = patch('deploy.matlow.prepare')

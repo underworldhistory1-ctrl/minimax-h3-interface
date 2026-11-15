@@ -21,7 +21,7 @@ async function checkWorkspace(browser,prefix){
       const type=file.endsWith('.js')?'application/javascript':file.endsWith('.css')?'text/css':'text/html';
       res.writeHead(200,{'Content-Type':type});return res.end(fs.readFileSync(file));
     }
-    if(route==='/h3_studio/image_readiness')return send(200,{ready:true,profiles:{int8:{ready:true},bf16:{ready:false}},nodes:{}});
+    if(route==='/h3_studio/image_readiness')return send(200,{ready:true,profiles:{int8:{ready:true},bf16:{ready:false}},nodes:{LoadImage:true}});
     if(route==='/h3_studio/image_library')return send(200,{items:[]});
     if(route==='/h3_studio/updates/status')return send(200,{state:'idle'});
     if(route==='/h3_studio/updates/check')return send(200,{state:'current'});

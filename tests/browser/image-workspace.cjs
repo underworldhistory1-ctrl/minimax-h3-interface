@@ -4,7 +4,7 @@ const root=path.resolve(__dirname,'../..');let browser;let uploads=[],graphs=[],
 (async()=>{
  browser=await chromium.launch({headless:true});const context=await browser.newContext({viewport:{width:1600,height:1000}}),page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await context.route('**/*',async route=>{const url=new URL(route.request().url());let data;
- if(url.pathname==='/h3_studio/image_readiness')data={ready:true,profiles:{int8:{ready:true}},nodes:{}};
+ if(url.pathname==='/h3_studio/image_readiness')data={ready:true,profiles:{int8:{ready:true}},nodes:{LoadImage:true}};
  else if(url.pathname==='/h3_studio/upload_ref'){const body=route.request().postDataJSON();uploads.push(body);assert.ok(route.request().headers()['content-type'].startsWith('application/json'));return uploadStatus===200?route.fulfill({json:{name:'h3_studio_kf_fixture.jpg'}}):route.fulfill({status:503,body:'Gateway unavailable'});}
  else if(url.pathname==='/prompt'&&route.request().method()==='POST'){graphs.push(route.request().postDataJSON().prompt);return route.fulfill({status:400,json:{error:{message:'Captured graph without GPU submission'}}});}
  else if(url.pathname==='/history')data={};else if(url.pathname==='/queue')data={queue_running:[],queue_pending:[]};else if(url.pathname.startsWith('/h3_studio/'))data={images:[],ok:true};
