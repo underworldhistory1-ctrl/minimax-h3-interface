@@ -341,7 +341,7 @@ function timingMedia(item){return H3TimingEstimator.mediaConfiguration(item,Numb
 function timingConfiguration(w=state.width,h=state.height){
   const canvas=samplingCanvas(w,h),newPreset=w===1664&&h===928||!!canvas.crop;
   const refine=$("enableRefine").checked;
-  const adapters=state.loras.filter(x=>x.enabled).map(x=>({name:x.name,strength:x.strength,
+  const adapters=H3Configuration.activeLorasInModelOrder(state.loras).map(x=>({name:x.name,strength:x.strength,
     refinement_strength:refine?(x.refinement_strength??(/Motion_Repair_V2/i.test(x.name)?.25:x.strength)):null}));
   if(turboMethod())adapters.push({name:method()==="turbo_ref"?H3Configuration.TURBO_REF:turboName,strength:1,refinement_strength:null});
   return {version:2,gpu:state.gpu,runtime:state.timingRuntime||null,attention_backend:state.labCapabilities?.server_attention?.implementation||"unrecorded",model:selectedCheckpoint(),sampling:turboMethod()?{...state.sampling,sampler_name:method()==="turbo_ref"?"euler":"h3_turbo",scheduler:"simple",cfg:1,denoise:1,shift_video:12,shift_audio:3}:state.sampling||{},audio_refinement:state.audioRefinement||{},model_profile:state.modelProfile||"original",hybrid_preset:state.hybridPreset||"none",node_options:state.nodeOptions||{},mode:state.mode,method:method(),
@@ -356,7 +356,7 @@ function timingConfiguration(w=state.width,h=state.height){
 }
 function captureSettings(){
   const refs=state.mode==="refs";
-  const adapters=state.loras.filter(item=>item.enabled).map(item=>({name:item.name,strength:item.strength,refinement_strength:$("enableRefine").checked?(item.refinement_strength??(/Motion_Repair_V2/i.test(item.name)?.25:item.strength)):undefined}));
+  const adapters=H3Configuration.activeLorasInModelOrder(state.loras).map(item=>({name:item.name,strength:item.strength,refinement_strength:$("enableRefine").checked?(item.refinement_strength??(/Motion_Repair_V2/i.test(item.name)?.25:item.strength)):undefined}));
   if(turboMethod())adapters.push({name:method()==="turbo_ref"?H3Configuration.TURBO_REF:turboName,strength:1});
   return {
     server_attention:state.labCapabilities?.server_attention||null,timingConfiguration:timingConfiguration(),mode:state.mode,compiled_prompt:state.lastCompiledPrompt||null,model:refs?"MiniMax H3 Ref2VA":"MiniMax H3 FL2VA",
@@ -482,7 +482,7 @@ function renderLoras() {
     if(managed){const note=document.createElement("div");note.className="tip";note.textContent=state.mode==="refs"?"This Turbo adapter targets FL2VA; use Text or Frames.":"Select Turbo LoRA above to apply Turbo v4 at strength 1.0.";row.append(note);}
     if(H3Configuration.pikaVariant(item.name)){const note=document.createElement('div');note.className='tip';const p=H3Configuration.pikaVariant(item.name);note.textContent='Pika Flex · '+p.steps+' required steps · '+(p.variant==='draft'?'Draft preview; render finals at 4/8 steps.':p.variant==='lite'?'Lite rank-32: smaller download; compression may affect detail.':'Full adapter.')+' Single pass, strength 1 and sampling are automatic. Original, or explicitly selected Singularity v2 in References. GPU quality/performance needs validation.';row.append(note);}
     if(swap){const note=document.createElement('div');note.className='tip';note.textContent='Experimental · References with your selected checkpoint · initial strength 1.0 · no trigger word. Start with one person in a short continuous shot. Source audio reuse is separate; timing and lip sync are not guaranteed. Other LoRA / control / acceleration combinations have no local GPU validation.';row.append(note);}
-    if(anime){const note=document.createElement('div');note.className='tip';note.textContent='LiseTY · trained on Ref2VA · trigger LumiReal. Style prompt presets can enable this adapter, or select it here directly. Strength 1 is a starting value, not a publisher-certified optimum. Other adapters, acceleration and refinement combinations are not quality-validated.';row.append(note);}
+    if(anime){const note=document.createElement('div');note.className='tip';note.textContent='LiseTY · trained on Ref2VA · trigger LumiReal. Style prompt presets can enable this adapter, or select it here directly. Strength 1 is a starting value, not a publisher-certified optimum. Can stack with Pika Flex Ref2VA. Output quality with this combination is experimental.';row.append(note);}
     if(combat||realism){const source=document.createElement("div");source.className="tip";source.textContent=combat?"Creator tested FL2VA only · optional triggers prfight2, prfin1":"All three modes · trigger r34l1sm · 1.0 intended strength";row.append(source);}
     if(combat&&state.mode==="refs"){const warning=document.createElement("div");warning.className="tip";warning.textContent="Experimental with Ref2VA: the creator tested FL2VA only. Appearance, motion and audio may change.";row.append(warning);}
     if(incompatible&&!managed){const warning=document.createElement("div");warning.className="tip error";warning.textContent="This adapter appears to target a different H3 checkpoint.";row.append(warning);}
@@ -961,7 +961,7 @@ function currentRenderSpec() {
     style_direction:state.styleDirection||null,
     preserve_reference_audio:preservedSoundtrack(),
     ref_image_size: $("refSize") ? $("refSize").value : "match",
-    loras: state.loras.filter(x => x.enabled),
+    loras: H3Configuration.activeLorasInModelOrder(state.loras),
     refine: $("enableRefine") ? $("enableRefine").checked : false,
     enable_refine: $("enableRefine") ? $("enableRefine").checked : false,
     continuation: state.continuation || null,

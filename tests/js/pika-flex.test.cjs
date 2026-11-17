@@ -17,3 +17,21 @@ test('leaving Pika restores sampling and valid standard steps',()=>{
  ctx.state.pikaBefore={sampling:{sampler_name:'h3_turbo'},steps:6};ctx.restorePikaSampling();assert.equal(ctx.state.sampling.sampler_name,undefined);
  fields.steps.value='4';ctx.restorePikaSampling();assert.equal(fields.steps.value,'20');assert.equal(ctx.state.sampling.shift_video,12);
 });
+
+test('Anime and Pika stay selected together with Pika first on both Ref2VA profiles',()=>{
+ const pika='pika_h3_flex_turbo_8step_hd_ref2va.safetensors',anime=C.ANIME_TO_REALISM;
+ const supported={...caps,model_catalog:[{name:C.SINGULARITY_V2,profiles:['singularity']}]};
+ for(const profile of ['original','singularity'])for(const action of ['pika','lora']){
+  const spec=C.normalizeSelection({mode:'refs',model_profile:profile,
+   checkpoint:profile==='singularity'?C.SINGULARITY_V2:C.REF,
+   loras:[{name:anime,enabled:true,strength:.7},{name:pika,enabled:true,strength:1}],
+   references:[{kind:'video',alias:'source',fps:24,frame_count:124}]},action,supported);
+  assert.ok(spec.loras.every(l=>l.enabled));
+  spec.loras=C.activeLorasInModelOrder(spec.loras);
+  const graph=buildGraph(spec,{source:'source.mp4'},supported);
+  assert.deepEqual(graph['50'].inputs,{model:['1',0],lora_name:pika,strength_model:1});
+  assert.deepEqual(graph['51'].inputs,{model:['50',0],lora_name:anime,strength_model:.7});
+  assert.deepEqual(graph['2'].inputs.model,['51',0]);
+  assert.equal(graph['8'].inputs.steps,8);
+ }
+});

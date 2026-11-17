@@ -20,7 +20,7 @@
   const VBVR='H3-Licon-VBVR-I2V.safetensors';
   function isSpatialPhysics(name){return String(name||'').split(/[\\/]/).pop().toLowerCase()===SPATIAL_PHYSICS.toLowerCase();}
   function isVBVR(name){return String(name||'').split(/[\\/]/).pop().toLowerCase()===VBVR.toLowerCase();}
-  function isSecondaryLoRA(name){return isSpatialPhysics(name)||isVBVR(name)||/Motion[_ -]Repair[_ -]V2/i.test(String(name||''))||/h3-realism-people/i.test(String(name||''));}
+  function isSecondaryLoRA(name){return isSpatialPhysics(name)||isVBVR(name)||isAnimeToRealism(name)||/Motion[_ -]Repair[_ -]V2/i.test(String(name||''))||/h3-realism-people/i.test(String(name||''));}
   function isAnimeToRealism(name){return String(name||'').split(/[\\/]/).pop().toLowerCase()===ANIME_TO_REALISM.toLowerCase();}
   function validateAnimeToRealism(spec){
     if(!(spec.loras||[]).some(x=>x.enabled&&isAnimeToRealism(x.name)))return;
@@ -42,6 +42,9 @@
     ['pika_h3_flex_turbo_2step_draft_ref2va.safetensors',{steps:2,family:'ref2va',variant:'draft'}]
   ]));
   function pikaVariant(name){return PIKA[name]||null;}
+  function activeLorasInModelOrder(loras){
+    return loras.filter(l=>l.enabled).sort((a,b)=>Number(!!pikaVariant(b.name))-Number(!!pikaVariant(a.name)));
+  }
   function pikaWorkflow(spec){
     const active=(spec.loras||[]).filter(l=>l.enabled!==false&&pikaVariant(l.name));
     if(active.length!==1)return null;
@@ -214,5 +217,5 @@
     }
     return node;
   }
-  return {PIKA,pikaVariant,pikaWorkflow,selectionChanges,pikaPromptWarnings,promptQualityWarnings,preferredCheckpoint,pikaSampling,loraModeCompatible,preservedReference,normalizeSelection,selectionRestrictions,validatePika,TURBO_REF,TURBO,defaults,profiles,resolve,patchOptions,FL,REF,SINGULARITY_V2,CHARACTER_SWAP,isCharacterSwap,preferredCharacterSwap,validateCharacterSwap,ANIME_TO_REALISM,isAnimeToRealism,validateAnimeToRealism,SPATIAL_PHYSICS,isSpatialPhysics,VBVR,isVBVR,isSecondaryLoRA};
+  return {PIKA,pikaVariant,activeLorasInModelOrder,pikaWorkflow,selectionChanges,pikaPromptWarnings,promptQualityWarnings,preferredCheckpoint,pikaSampling,loraModeCompatible,preservedReference,normalizeSelection,selectionRestrictions,validatePika,TURBO_REF,TURBO,defaults,profiles,resolve,patchOptions,FL,REF,SINGULARITY_V2,CHARACTER_SWAP,isCharacterSwap,preferredCharacterSwap,validateCharacterSwap,ANIME_TO_REALISM,isAnimeToRealism,validateAnimeToRealism,SPATIAL_PHYSICS,isSpatialPhysics,VBVR,isVBVR,isSecondaryLoRA};
 });
