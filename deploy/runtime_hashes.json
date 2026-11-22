@@ -630,7 +630,8 @@
     "ffe9e529db97619b41e8e6102f733b95799ae2e8",
     "423fd231378999fb322cf1b51bdf746ba588397d",
     "479ed383ad556839a0c7b4d85c4519da29f97e9f",
-    "dafac7d3ce787fa76e705901fcf2162a877c5027"
+    "dafac7d3ce787fa76e705901fcf2162a877c5027",
+    "ce323ed9ce5ccd41a7b50ad0a8b1048856a5ee5a"
   ],
   "deploy/runtime_patches.py": [
     "0fdc101b492faeb3d902f9d268074d0f25bf5331",
@@ -2140,7 +2141,8 @@
   ],
   "tests/js/pika-flex.test.cjs": [
     "698a569498ad86aa2d4024132fb21d6697d73868",
-    "c38650663c5be3b7913772be4c54d2e40a249fad"
+    "c38650663c5be3b7913772be4c54d2e40a249fad",
+    "20d4540f776b87f44e38f6a6ff3601a2406ffd73"
   ],
   "tests/js/preparation-restore.test.cjs": [
     "25590dfeeb5a3f538ec786674b5105b62800043b",
@@ -2751,7 +2753,9 @@
     "baba9c6dd61a002d9b37de7b3d8a9fa7a1f7532f",
     "cb79a449eeefed299d17d926c822ea2e8711d63a",
     "f2a4333bed26c95dedc4145250fe43af37bf341c",
-    "fbd5908d1852f16daa7328c5bb7c14c25865e36e"
+    "fbd5908d1852f16daa7328c5bb7c14c25865e36e",
+    "5a5bcfbbed9186721b558abc567c6ceef0602e7c",
+    "bd94e49dd7c02c74a2b08d2d906e038a6f36b8dd"
   ],
   "web/h3/connected-studio.js": [
     "05445d1988f82e0755addcae209c73a03773c2d5",
@@ -3141,7 +3145,10 @@
     "f93169a8b3359f220d5c3a2fa0e02b483817f05b",
     "f99b331526ef9639ba5cdcba42678f0938b64578",
     "fdca5f4655f9445045fd4dd366543bd51bfd721a",
-    "8b2ac4bd175bc3094feb8b4b2a7ed2bcc116b748"
+    "8b2ac4bd175bc3094feb8b4b2a7ed2bcc116b748",
+    "5c8b1aa68f0d55cf95afeae5692d676faab78e4d",
+    "5f6c9870bbab5990faa5b3a25e5fddb344e4159f",
+    "a0a096ee1bd03c771028f1960f2eb0c43e96a4e5"
   ],
   "web/lab-ui.js": [
     "0034a31c4d87689cb67bd0209ea8555cc6cb2a41",
@@ -3277,7 +3284,9 @@
     "f8a10f0772525bd24a21bff9a515694e46805df8",
     "fd5995f41a9ce9a1ebfa4ffc983e273ba4b7b8be",
     "ff233a13bdfeeab696adf484010a326f5048548e",
-    "7d013e9f75e01350e367901a6c9f05a84b09ea35"
+    "7d013e9f75e01350e367901a6c9f05a84b09ea35",
+    "bfec8198a8fe3cfb2c6bd8a25adaba3d71ca24e5",
+    "8fecd49eb4b5b78a1a17f26b8ddce9ef1d71900f"
   ],
   "workflows/h3_t2v_api.json": [
     "6862ce962e1eba0217d02b82b6dcaa192bddd6df",
