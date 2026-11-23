@@ -39,13 +39,35 @@ class TestRuntimeAttention(unittest.TestCase):
             self.assertNotIn('--use-pytorch-cross-attention', source)
 
     def test_supervisor_defaults_ck_and_keeps_explicit_pytorch(self):
-        from deploy.openbayes_h3_supervisor import worker_command
+        import tempfile
+        from deploy import openbayes_h3_supervisor as supervisor
         args = types.SimpleNamespace(bind='127.0.0.1', port=8188, reserve_vram=3.0)
-        self.assertIn('--use-ck-attention', worker_command('python', args))
-        args.attention_backend = 'pytorch'
-        command = worker_command('python', args)
-        self.assertIn('--use-pytorch-cross-attention', command)
-        self.assertNotIn('--use-ck-attention', command)
+        with tempfile.TemporaryDirectory() as td:
+            with patch.object(supervisor, 'MEMINFO_PATH', pathlib.Path(td) / 'missing_meminfo'):
+                self.assertIn('--use-ck-attention', supervisor.worker_command('python', args))
+                args.attention_backend = 'pytorch'
+                command = supervisor.worker_command('python', args)
+                self.assertIn('--use-pytorch-cross-attention', command)
+                self.assertNotIn('--use-ck-attention', command)
+
+    def test_supervisor_scales_cache_ram_for_low_memory_hosts(self):
+        import tempfile
+        from deploy import openbayes_h3_supervisor as supervisor
+        args = types.SimpleNamespace(bind='127.0.0.1', port=8188, reserve_vram=3.0)
+        with tempfile.TemporaryDirectory() as td:
+            mem = pathlib.Path(td) / 'meminfo'
+            mem.write_text('MemTotal:       40960000 kB\n', encoding='utf-8')
+            with patch.object(supervisor, 'MEMINFO_PATH', mem):
+                cmd = supervisor.worker_command('python', args)
+            idx = cmd.index('--cache-ram')
+            self.assertEqual(cmd[idx:idx + 3], ['--cache-ram', '6', '12'])
+
+            mem.write_text('MemTotal:       67108864 kB\n', encoding='utf-8')
+            with patch.object(supervisor, 'MEMINFO_PATH', mem):
+                cmd = supervisor.worker_command('python', args)
+            idx = cmd.index('--cache-ram')
+            self.assertEqual(cmd[idx], '--cache-ram')
+            self.assertEqual(cmd[idx + 1], '--fp16-intermediates')
 
     def test_supervisor_rechecks_slow_startup_before_recovery(self):
         from deploy import openbayes_h3_supervisor as supervisor

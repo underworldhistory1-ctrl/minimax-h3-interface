@@ -22,6 +22,21 @@ import urllib.request
 
 
 STOP = False
+MEMINFO_PATH = pathlib.Path("/proc/meminfo")
+
+
+def _ram_cache_args():
+    """Bound ComfyUI RAM pressure cache headroom on <56 GiB containers."""
+    try:
+        for line in MEMINFO_PATH.read_text(encoding="utf-8").splitlines():
+            if line.startswith("MemTotal:"):
+                kib = int(line.split()[1])
+                if kib < 56 * 1024 * 1024:
+                    return ["--cache-ram", "6", "12"]
+                return ["--cache-ram"]
+    except (OSError, ValueError, IndexError):
+        pass
+    return ["--cache-ram"]
 
 
 def stop(_signum, _frame):
@@ -120,7 +135,7 @@ def recover(comfy, base):
 
 def worker_command(python, args):
     command = [str(python), 'main.py', '--listen', args.bind, '--port', str(args.port),
-            '--reserve-vram', str(args.reserve_vram), '--cache-ram', '--fp16-intermediates',
+            '--reserve-vram', str(args.reserve_vram), *_ram_cache_args(), '--fp16-intermediates',
             '--use-ck-attention' if getattr(args, 'attention_backend', 'ck-int8') == 'ck-int8'
             else '--use-pytorch-cross-attention']
     if getattr(args, 'disable_dynamic_vram', False) is True:
