@@ -2,6 +2,7 @@
 const $ = id => document.getElementById(id);
 const state = {
   mode: "text", prompts: {text:"",frames:"",refs:""}, width: 1280, height: 704, refs: [], guides: [], first: null, last: null,
+  dismissedCatalogAssets: new Set(),
   running: null, started: 0, renderStarted: 0, samplingStart: 0, stepAt: 0, lastStep: 0,
   stepDurations: [], estimated: null, uploads: [], results: [], current: null, visibleResults: 8,
   gpu: "unknown", ramLimit: null, clientId: sessionStorage.getItem("h3studio.client.id.v1")||crypto.randomUUID(), socket: null, reconnect: 0,
@@ -645,6 +646,24 @@ function attachReferenceSorting(){
   }
   H3Drag.attach(container,{selector:'.reference-unit',handle:'.ref-block-handle',locked,onCommit:commit,onCancel:renderRefs});
 }
+function removeShotReference(ref){
+  const locked=state.busy||state.projectLoading||(typeof referenceMutationLocked==='function'&&referenceMutationLocked());
+  if(locked||!ref)return false;
+  const idx=state.refs.indexOf(ref);
+  if(idx<0)return false;
+  state.refs.splice(idx,1);
+  if(ref.assetId){
+    if(!(state.dismissedCatalogAssets instanceof Set))state.dismissedCatalogAssets=new Set(state.dismissedCatalogAssets||[]);
+    state.dismissedCatalogAssets.add(ref.assetId);
+  }
+  if(typeof cancelQueuedPromptMentionSync==='function')cancelQueuedPromptMentionSync();
+  if(state.preserveAudioSource===ref.alias)state.preserveAudioSource=null;
+  for(const url of new Set([ref.previewUrl,ref.originalPreviewUrl,ref.url]))if(url)URL.revokeObjectURL(url);
+  if(typeof syncRestoredInputStatus==='function')syncRestoredInputStatus();
+  renderRefs();renderEstimates();updatePreviewLive();saveDraft();
+  if(typeof H3VideoTabState!=='undefined')H3VideoTabState.flush?.();
+  return true;
+}
 function renderRefs() {
   for(const card of $('refs').querySelectorAll('details.ref'))if(card._reference&&!!card._reference.expanded===card._expandedAtRender)card._reference.expanded=card.open;
   state.refs=orderedRefs();
@@ -652,7 +671,7 @@ function renderRefs() {
   H3ReferenceControls.cleanup($("refs"));
   $("refs").replaceChildren();
   state.refs.forEach((ref,index) => {
-    if(ref.restoreError){const missing=missingInputCard(ref,()=>state.refs.splice(index,1));missing.dataset.referenceIndex=String(index);missing.classList.add('reference-unit');$("refs").append(missing);return;}
+    if(ref.restoreError){const missing=missingInputCard(ref,()=>removeShotReference(ref));missing.dataset.referenceIndex=String(index);missing.classList.add('reference-unit');$("refs").append(missing);return;}
     const card=document.createElement("details");card.className="ref compact-ref";card._reference=ref;card.open=!!ref.expanded;card._expandedAtRender=card.open;card.ontoggle=()=>{if(!card.isConnected)return;ref.expanded=card.open;card._expandedAtRender=card.open;if(card.open){const large=card.querySelector(".ref-expanded-preview");if(large&&!large.src)large.src=ref.previewUrl;}};
     card.dataset.referenceIndex=String(index);const head=document.createElement("summary");head.className="refhead";
     const icon=document.createElement("div");icon.className="icon";
@@ -672,7 +691,7 @@ function renderRefs() {
     }else icon.textContent=ref.kind==="audio"?"♫":ref.kind==="video"?"▶":"I";
     const title=document.createElement("strong");title.textContent="@"+ref.alias+(ref.kind==="image"?" · Picture "+(state.refs.filter(r=>r.kind==="image").indexOf(ref)+1):"")+(ref.label&&ref.label!==ref.alias?" ("+ref.label+")":"")+" · "+ref.role;
     const remove=document.createElement("button");remove.className="button alt smallbtn";remove.textContent="Remove";remove.disabled=locked;
-    remove.onclick=()=>{if(locked)return;state.refs.splice(state.refs.indexOf(ref),1);for(const url of new Set([ref.previewUrl,ref.originalPreviewUrl,ref.url]))if(url)URL.revokeObjectURL(url);renderRefs();renderEstimates();updatePreviewLive();saveDraft();};
+    remove.onclick=()=>{removeShotReference(ref);};
     const replace=document.createElement("button");replace.type="button";replace.className="button alt smallbtn ref-replace";replace.textContent="Replace";replace.disabled=locked;replace.hidden=ref.kind!=="image";replace.title="Replace this shot image and keep its name and position";replace.onclick=event=>{event.preventDefault();event.stopPropagation();requestReferenceReplacement(ref);};
     const up=document.createElement("button"),down=document.createElement("button");up.textContent="↑";down.textContent="↓";up.title="Move earlier within this reference group or media type";down.title="Move later within this reference group or media type";for(const button of [up,down]){button.className="button alt smallbtn";button.disabled=locked;}for(const [button,direction] of [[up,-1],[down,1]])button.onclick=()=>{if(locked)return;const group=H3ReferencePolicy.groupKey(ref),same=state.refs.map((r,i)=>r.kind===ref.kind&&(!group||H3ReferencePolicy.groupKey(r)===group)?i:-1).filter(i=>i>=0),target=same[same.indexOf(index)+direction];if(target===undefined)return;const next=state.refs.slice();[next[index],next[target]]=[next[target],next[index]];commitReferenceOrder(next);};for(const button of [up,down,remove])button.addEventListener("click",e=>e.preventDefault());const order=document.createElement("span");order.className="ref-order-actions";order.append(up,down);const actions=document.createElement("span");actions.className="ref-card-actions";actions.append(replace,remove);head.append(icon,title,order,actions);
     const meta=document.createElement("div");meta.className="refmeta";
@@ -687,7 +706,8 @@ function renderRefs() {
     name.onchange=()=>{
       if(locked)return;
       const value=name.value.trim();
-      if(!/^[\p{L}\p{N}_-]{1,32}$/u.test(value)||state.refs.some(r=>r!==ref&&r.alias.toLocaleLowerCase()===value.toLocaleLowerCase())||(typeof projectCatalogItems==='function'?projectCatalogItems():[]).some(a=>a.assetId!==ref.assetId&&a.alias?.toLocaleLowerCase()===value.toLocaleLowerCase())){
+      const dismissed=state.dismissedCatalogAssets instanceof Set?state.dismissedCatalogAssets:new Set(state.dismissedCatalogAssets||[]);
+      if(!/^[\p{L}\p{N}_-]{1,32}$/u.test(value)||state.refs.some(r=>r!==ref&&r.alias.toLocaleLowerCase()===value.toLocaleLowerCase())||(typeof projectCatalogItems==='function'?projectCatalogItems():[]).some(a=>a.assetId!==ref.assetId&&!dismissed.has(a.assetId)&&a.alias?.toLocaleLowerCase()===value.toLocaleLowerCase())){
         name.value=ref.alias; info("Use a unique name with letters, numbers, _ or -, and no spaces.",true);return;
       }
       const old=ref.alias;ref.alias=value;
@@ -777,7 +797,7 @@ $("refFile").onchange=()=>{
     state.refs.push(ref);
     if(kind==="audio"){
       const url=URL.createObjectURL(file),probe=document.createElement("audio");probe.preload="metadata";probe.src=url;
-      probe.onloadedmetadata=()=>{if(Number.isFinite(probe.duration)&&probe.duration>0){ref.localDuration=probe.duration;if(probe.duration>15.1&&!ref.trimEnabled){ref.trimEnabled=true;ref.trimDuration=15;}fitReferenceTrim(ref);}URL.revokeObjectURL(url);renderRefs();};probe.onerror=()=>URL.revokeObjectURL(url);
+      probe.onloadedmetadata=()=>{if(!state.refs.includes(ref)){URL.revokeObjectURL(url);return;}if(Number.isFinite(probe.duration)&&probe.duration>0){ref.localDuration=probe.duration;if(probe.duration>15.1&&!ref.trimEnabled){ref.trimEnabled=true;ref.trimDuration=15;}fitReferenceTrim(ref);}URL.revokeObjectURL(url);renderRefs();};probe.onerror=()=>URL.revokeObjectURL(url);
     }
   }
   state.pendingRefGroup=null;
@@ -842,9 +862,10 @@ function preferredReferenceMention(alias){
   const refs=currentRenderSpec().references||[],ref=refs.find(item=>item.alias===alias);
   if(!ref)return alias;
   const name=H3PromptCompiler.mentionName(ref);
+  const dismissed=state.dismissedCatalogAssets instanceof Set?state.dismissedCatalogAssets:new Set(state.dismissedCatalogAssets||[]);
   const attachedIds=new Set(refs.map(item=>item.asset_id||item.assetId));
   const attachedAliases=new Set(refs.map(item=>item.alias.toLocaleLowerCase()));
-  const catalog=typeof projectCatalogItems==='function'?projectCatalogItems().filter(item=>!attachedIds.has(item.assetId)&&!attachedAliases.has(item.alias.toLocaleLowerCase())):[];
+  const catalog=typeof projectCatalogItems==='function'?projectCatalogItems().filter(item=>!dismissed.has(item.assetId)&&!attachedIds.has(item.assetId)&&!attachedAliases.has(item.alias.toLocaleLowerCase())):[];
   try{if(H3PromptCompiler.normalizeReferenceMentions('@'+name,[...catalog,...refs])==='@'+alias)return name;}catch{}
   return alias;
 }
@@ -1038,7 +1059,7 @@ function orderedRefs(){return ["image","video","audio"].flatMap(k=>state.refs.fi
 
 function resolvedRenderSpec(uploads){
   const spec=currentRenderSpec();
-  if(spec.mode==='refs')spec.references=spec.references.map(ref=>({...ref,filename:uploads.refs?.get(state.refs.find(r=>r.alias===ref.alias))}));
+  if(spec.mode==='refs')spec.references=spec.references.map((ref,idx)=>({...ref,filename:uploads.refs?.get(state.refs[idx])??uploads.refs?.get(state.refs.find(r=>r.alias===ref.alias))}));
   for(const key of ['first','last'])if(spec.frames[key])spec.frames[key]={...spec.frames[key],filename:uploads[key]};
   spec.guides=spec.guides.map((guide,index)=>({...guide,filename:uploads.guides?.get(state.guides[index])}));
   return spec;

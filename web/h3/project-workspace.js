@@ -98,9 +98,11 @@ async function renderProjectHub(){
   }
   $('projectHubStatus').textContent=list.children.length?'':'Create your first project. Assets and shot settings stay with it.';
 }
-async function activateProjectAsset(item){
+async function activateProjectAsset(item,options={}){
+  const {explicit=false,allowAutoAlias=false,checkPromptUnchanged=true}=options||{};
   if(workspaceLocked())throw Error('Wait for the current operation to finish.');
   if(!state.currentProject?.assets?.some(asset=>asset.asset_id===item.assetId))throw Error('This element is not in the active project.');
+  if(explicit&&item.assetId&&state.dismissedCatalogAssets instanceof Set)state.dismissedCatalogAssets.delete(item.assetId);
   const existing=state.refs.find(ref=>ref.assetId===item.assetId);
   if(existing){
     const prompt=$('prompt').value,mode=state.mode;
@@ -111,8 +113,15 @@ async function activateProjectAsset(item){
   if(state.refs.length>=12||state.refs.filter(ref=>ref.kind===item.kind).length>=maxRefs[item.kind]||
     item.kind==='audio'&&state.refs.filter(ref=>ref.kind==='audio').length>=3)
     throw Error('This shot has reached the H3 reference limit. Remove a shot reference first; the project asset will stay saved.');
-  if(state.refs.some(ref=>ref.alias.toLocaleLowerCase()===item.alias.toLocaleLowerCase()))
-    throw Error('This alias is already used by another shot reference. Rename that reference before adding the project asset.');
+  let shotAlias=item.alias;
+  if(state.refs.some(ref=>ref.alias.toLocaleLowerCase()===shotAlias.toLocaleLowerCase())){
+    if(!allowAutoAlias)throw Error('This alias is already used by another shot reference. Rename that reference before adding the project asset.');
+    let idx=2;
+    while(state.refs.some(ref=>ref.alias.toLocaleLowerCase()===shotAlias.toLocaleLowerCase())){
+      const suffix='_'+idx++;
+      shotAlias=item.alias.slice(0,32-suffix.length)+suffix;
+    }
+  }
   const referenceCheckpoint=state.modelProfile&&state.modelProfile!=='original'?selectedCheckpoint():modelRef;
   if(state.continuation?.type==='generated'&&state.continuation.source_model!==referenceCheckpoint)
     throw Error('Use Active continuation → References to re-encode this source before adding project references.');
@@ -121,14 +130,16 @@ async function activateProjectAsset(item){
   try{
     const [record,blob]=await Promise.all([controller.getAsset(item.assetId),controller.mediaBlob(item.assetId)]);
     if(controller!==projectCtrl||pid!==state.activeProjectId)throw Error('Project changed while loading the asset.');
-    if(state.mode!==initialMode||$('prompt').value!==initialPrompt)throw Error('The prompt changed while loading the element. Select it again to attach it.');
+    if(!explicit&&state.dismissedCatalogAssets instanceof Set&&state.dismissedCatalogAssets.has(item.assetId))throw Error('Element was removed from this shot.');
+    if(checkPromptUnchanged&&(state.mode!==initialMode||$('prompt').value!==initialPrompt))throw Error('The prompt changed while loading the element. Select it again to attach it.');
+    if(state.refs.some(ref=>ref.assetId===item.assetId||ref.alias.toLocaleLowerCase()===shotAlias.toLocaleLowerCase()))throw Error('Element is already attached or its alias is in use.');
     // Readiness gates apply before committing a reference, including selected checkpoint compatibility.
     selectMode('refs');if(state.mode!=='refs')throw Error('References mode is unavailable on this server.');
-    if(initialMode!=='refs'){state.prompts.refs=initialPrompt;$('prompt').value=initialPrompt;}
+    if(checkPromptUnchanged&&initialMode!=='refs'){state.prompts.refs=initialPrompt;$('prompt').value=initialPrompt;}
     url=URL.createObjectURL(blob);
     const videoMeta=record?.metadata||item.metadata||{};
-    const ref={assetId:item.assetId,file:new File([blob],record.original_name||item.alias,{type:blob.type}),kind:item.kind,alias:item.alias,
-      label:item.label||item.name||item.alias,name:item.name||item.label||item.alias,
+    const ref={assetId:item.assetId,file:new File([blob],record.original_name||shotAlias,{type:blob.type}),kind:item.kind,alias:shotAlias,
+      label:item.label||item.name||shotAlias,name:item.name||item.label||shotAlias,
       mention_names:item.mention_names||[],
       role:item.role||(item.kind==='image'?'character identity':item.kind==='video'?'motion':'voice'),
       previewUrl:item.kind==='audio'?null:url,url,useAudio:false,trimEnabled:false,trimStart:0,trimDuration:15,fitVideo:true,instruction:item.notes||'',
@@ -141,6 +152,7 @@ async function activateProjectAsset(item){
     if(item.kind==='video'){
       const vid=document.createElement('video');vid.preload='metadata';vid.src=url;
       vid.onloadedmetadata=()=>{
+        if(!state.refs.includes(ref))return;
         if(Number.isFinite(vid.duration)&&vid.duration>0){
           ref.localDuration=vid.duration;
           if(!ref.meta)ref.meta={fps:24};
@@ -155,19 +167,30 @@ async function activateProjectAsset(item){
   }finally{if(url)URL.revokeObjectURL(url);workspaceCatalogBusy=false;renderProjectCatalog();}
 }
 let syncMentionsTimer=null,syncMentionsPending=null;
+function cancelQueuedPromptMentionSync(){clearTimeout(syncMentionsTimer);syncMentionsTimer=null;}
 function syncPromptMentionsToReferences(){
   if(syncMentionsPending)return syncMentionsPending;
   if(!state.currentProject?.assets||workspaceLocked())return Promise.resolve();
   const pid=state.activeProjectId;
   syncMentionsPending=(async()=>{
+    const dismissed=state.dismissedCatalogAssets instanceof Set?state.dismissedCatalogAssets:new Set(state.dismissedCatalogAssets||[]);
     const attachedIds=new Set(state.refs.map(ref=>ref.assetId));
     const attachedAliases=new Set(state.refs.map(ref=>ref.alias.toLocaleLowerCase()));
-    const catalog=projectCatalogItems().filter(ref=>!attachedIds.has(ref.assetId)&&!attachedAliases.has(ref.alias.toLocaleLowerCase()));
-    const text=H3PromptCompiler.normalizeReferenceMentions($('prompt').value||'',[...catalog,...state.refs]);
+    const catalog=projectCatalogItems().filter(ref=>!dismissed.has(ref.assetId)&&!attachedIds.has(ref.assetId)&&!attachedAliases.has(ref.alias.toLocaleLowerCase()));
+    const rawPrompt=$('prompt').value||'';
+    let text=rawPrompt;
+    try{
+      text=H3PromptCompiler.normalizeReferenceMentions(rawPrompt,[...catalog,...state.refs]);
+    }catch{
+      try{text=H3PromptCompiler.normalizeReferenceMentions(rawPrompt,state.refs);}catch{text=rawPrompt;}
+    }
     const mentions=new Set([...text.matchAll(/@([\p{L}\p{N}_-]+)/gu)].map(match=>match[1].toLocaleLowerCase()));
     for(const item of catalog){
       if(pid!==state.activeProjectId)return;
-      if(mentions.has(item.alias.toLocaleLowerCase())&&!state.refs.some(ref=>ref.assetId===item.assetId))await activateProjectAsset(item);
+      if(state.dismissedCatalogAssets instanceof Set&&state.dismissedCatalogAssets.has(item.assetId))continue;
+      if(mentions.has(item.alias.toLocaleLowerCase())&&!state.refs.some(ref=>ref.assetId===item.assetId||ref.alias.toLocaleLowerCase()===item.alias.toLocaleLowerCase())){
+        await activateProjectAsset(item,{checkPromptUnchanged:false});
+      }
     }
   })().finally(()=>{syncMentionsPending=null;});
   return syncMentionsPending;
@@ -179,7 +202,8 @@ function queueSyncPromptMentions(){
 async function insertProjectMention(item,range=null){
   const input=$('prompt'),start=range?.start??input.selectionStart,end=range?.end??input.selectionEnd;
   const pid=state.activeProjectId,initialPrompt=input.value,alreadyAttached=state.refs.some(ref=>ref.assetId===item.assetId);
-  const ref=item.catalog?await activateProjectAsset(item):item;
+  if(item.assetId&&state.dismissedCatalogAssets instanceof Set)state.dismissedCatalogAssets.delete(item.assetId);
+  const ref=item.catalog?await activateProjectAsset(item,{explicit:true,allowAutoAlias:true,checkPromptUnchanged:true}):item;
   if(pid!==state.activeProjectId)throw Error('Project changed before inserting the reference.');
   if(input.value!==initialPrompt){
     if(item.catalog&&!alreadyAttached){state.refs=state.refs.filter(candidate=>candidate!==ref);if(ref.url)URL.revokeObjectURL(ref.url);renderRefs();saveDraft();}
