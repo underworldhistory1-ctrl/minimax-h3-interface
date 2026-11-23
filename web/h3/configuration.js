@@ -3,6 +3,27 @@
   'use strict';
   const FL='minimax_h3_fl2va_pruned_int8_convrot.safetensors', REF='minimax_h3_ref2va_pruned_int8_convrot.safetensors';
   const defaults=Object.freeze({sampler_name:'res_multistep',scheduler:'simple',cfg:1,denoise:1,shift_video:12,shift_audio:3,weight_dtype:'default'});
+  const SPARSE_DEFAULTS=Object.freeze({tau:1.3,start_percent:0.2,end_percent:1.0,extra_tokens:256,sink_conditioning:'exact_kv_and_rows'});
+  function resolveSparseAttention(spec){
+    const opts=spec?.sparse_attention;
+    if(opts!=null&&(typeof opts!=='object'||Array.isArray(opts)))throw Error('Sparse attention settings must be an object.');
+    const allowed=new Set(['enabled','tau','start_percent','end_percent','extra_tokens','sink_conditioning']);
+    for(const key of Object.keys(opts||{}))if(!allowed.has(key))throw Error('Unknown sparse attention setting: '+key);
+    if(opts?.enabled!==undefined&&typeof opts.enabled!=='boolean')throw Error('Sparse attention enabled must be boolean.');
+    if(!opts?.enabled)return {enabled:false,...SPARSE_DEFAULTS};
+    const tau=Number(opts.tau??SPARSE_DEFAULTS.tau);
+    const start_percent=Number(opts.start_percent??SPARSE_DEFAULTS.start_percent);
+    const end_percent=Number(opts.end_percent??SPARSE_DEFAULTS.end_percent);
+    const extra_tokens=opts.extra_tokens??SPARSE_DEFAULTS.extra_tokens;
+    const sink_conditioning=opts.sink_conditioning??SPARSE_DEFAULTS.sink_conditioning;
+    if(!Number.isFinite(tau)||tau<0||tau>4)throw Error('Sparse attention tau must be between 0 and 4.');
+    if(!Number.isFinite(start_percent)||start_percent<0||start_percent>1)throw Error('Sparse attention start_percent must be between 0 and 1.');
+    if(!Number.isFinite(end_percent)||end_percent<0||end_percent>1)throw Error('Sparse attention end_percent must be between 0 and 1.');
+    if(start_percent>end_percent)throw Error('Sparse attention start_percent must not exceed end_percent.');
+    if(!Number.isInteger(extra_tokens)||extra_tokens<0||extra_tokens>256||extra_tokens%64!==0)throw Error('Sparse attention extra_tokens must be a multiple of 64 between 0 and 256.');
+    if(!['exact_kv_and_rows','exact_kv','off'].includes(sink_conditioning))throw Error('Invalid sparse attention conditioning protection mode.');
+    return {enabled:true,tau,start_percent,end_percent,extra_tokens,sink_conditioning};
+  }
   const profiles=Object.freeze({original:{label:'Original H3',accent:'original'},singularity:{label:'H3 Singularity',accent:'singularity'},hybrid_conditioning:{label:'Hybrid · FL2VA reference conditioning',accent:'hybrid'},hybrid_loader:{label:'Hybrid · tensor overlay loader',accent:'hybrid'}});
   const SINGULARITY_V2='Minimax-h3_Singularity_ref2va_v2_pruned_int8.safetensors';
   function preferredCheckpoint(profile,caps={},current=null){
@@ -59,6 +80,7 @@
     if(previous.enable_refine&&!next.enable_refine)changes.push('Disabled image refinement');
     if(previous.control?.enabled&&!next.control?.enabled)changes.push('Disabled ControlNet');
     if(previous.audio_refinement?.enabled&&!next.audio_refinement?.enabled)changes.push('Disabled audio enhancement');
+    if(previous.sparse_attention?.enabled&&!next.sparse_attention?.enabled)changes.push('Disabled Sol-Attn sparse attention');
     if(previous.model_profile!==next.model_profile)changes.push('Model profile: '+next.model_profile);
     if(previous.render_method!==next.render_method)changes.push('Render method: '+next.render_method);
     const pika=pikaWorkflow(next);
@@ -125,6 +147,7 @@
       s.control={...s.control,enabled:false};s.audio_refinement={...s.audio_refinement,enabled:false};
       if(!pika){for(const l of s.loras)l.enabled=false;s.steps=s.render_method==='turbo_ref'?8:s.steps>=4&&s.steps<=8?s.steps:6;}
     }else if(s.sampling.sampler_name==='h3_turbo')delete s.sampling.sampler_name;
+    if(['turbo','turbo_ref'].includes(s.render_method))s.sparse_attention={...s.sparse_attention,enabled:false};
     if(s.model_profile==='hybrid_loader')s.sampling.weight_dtype='default';
     return s;
   }
@@ -137,6 +160,7 @@
     return {managed,sampling:managed,refine:single||(spec.control?.enabled?'Disable ControlNet before refinement.':spec.continuation?'Clear continuation before refinement.':''),
       control:(managed?'This selected adapter/method requires generation without ControlNet.':'')||(spec.enable_refine||spec.refine?'Disable refinement before ControlNet.':spec.continuation?'Clear continuation before ControlNet.':spec.audio_refinement?.enabled?'Disable audio enhancement before ControlNet.':''),
       audio:single||(spec.control?.enabled?'Disable ControlNet before audio enhancement.':spec.preserve_reference_audio?'Original reference soundtrack is preserved; generated-audio enhancement is bypassed.':''),
+      sparse:turbo?'Retired Turbo v4 requires dense sampling.':'',
       pika:spec.continuation?'Clear continuation before selecting Pika.':'',turbo:spec.continuation?'Clear continuation before selecting Turbo.':''};
   }
   function validatePika(spec){
@@ -188,6 +212,13 @@
       if(profile!=='original'||(turboRef?spec.mode!=='refs':spec.mode==='refs'))throw Error('Select the Turbo version matching Original Text/Frames or References.');
       if((spec.loras||[]).some(x=>x.enabled)||spec.enable_refine||spec.refine||spec.control?.enabled||spec.continuation||spec.audio_refinement?.enabled)throw Error('Turbo v4 requires a single generation pass without other adapters, refinement, ControlNet or continuation.');
     }
+    if(spec.sparse_attention!=null){
+      const sparse=resolveSparseAttention(spec);
+      if(sparse.enabled){
+        if(!caps.sparse_attention_ready)throw Error('Sol-Attn sparse attention is unavailable on this server.');
+        if(turbo)throw Error('Sol-Attn sparse attention cannot be combined with retired Turbo v4.');
+      }
+    }
     const settings={...defaults,...spec.sampling,...(turbo?{sampler_name:turboRef?'euler':'h3_turbo',scheduler:'simple',cfg:1,denoise:1,shift_video:12,shift_audio:3}:{})};
     if(!turbo&&settings.sampler_name==='h3_turbo')throw Error('The H3 Turbo sampler requires the Turbo v4 render method.');
     const ranges={cfg:[0,100],denoise:[0,1],shift_video:[0,100],shift_audio:[0,100]};
@@ -217,5 +248,5 @@
     }
     return node;
   }
-  return {PIKA,pikaVariant,activeLorasInModelOrder,pikaWorkflow,selectionChanges,pikaPromptWarnings,promptQualityWarnings,preferredCheckpoint,pikaSampling,loraModeCompatible,preservedReference,normalizeSelection,selectionRestrictions,validatePika,TURBO_REF,TURBO,defaults,profiles,resolve,patchOptions,FL,REF,SINGULARITY_V2,CHARACTER_SWAP,isCharacterSwap,preferredCharacterSwap,validateCharacterSwap,ANIME_TO_REALISM,isAnimeToRealism,validateAnimeToRealism,SPATIAL_PHYSICS,isSpatialPhysics,VBVR,isVBVR,isSecondaryLoRA};
+  return {PIKA,pikaVariant,activeLorasInModelOrder,pikaWorkflow,selectionChanges,pikaPromptWarnings,promptQualityWarnings,preferredCheckpoint,pikaSampling,loraModeCompatible,preservedReference,normalizeSelection,selectionRestrictions,validatePika,TURBO_REF,TURBO,defaults,SPARSE_DEFAULTS,resolveSparseAttention,profiles,resolve,patchOptions,FL,REF,SINGULARITY_V2,CHARACTER_SWAP,isCharacterSwap,preferredCharacterSwap,validateCharacterSwap,ANIME_TO_REALISM,isAnimeToRealism,validateAnimeToRealism,SPATIAL_PHYSICS,isSpatialPhysics,VBVR,isVBVR,isSecondaryLoRA};
 });

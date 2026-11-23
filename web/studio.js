@@ -188,17 +188,17 @@ function updateCapabilities(){
   refreshSelectionAvailability();
 }
 function preservedSoundtrack(){return state.preserveReferenceAudio?(state.preserveAudioSource||((state.refs||[]).filter(r=>r.kind==='video').length===1?state.refs.find(r=>r.kind==='video').alias:true)):null;}
-function selectionSpec(){return {mode:state.mode,model_profile:state.modelProfile||'original',checkpoint:state.checkpoint,render_method:method(),steps:Number($('steps').value),sampling:state.sampling,loras:state.loras,enable_refine:!!$('enableRefine')?.checked,control:state.control,continuation:state.continuation,audio_refinement:state.audioRefinement,preserve_reference_audio:preservedSoundtrack()};}
+function selectionSpec(){return {mode:state.mode,model_profile:state.modelProfile||'original',checkpoint:state.checkpoint,render_method:method(),steps:Number($('steps').value),sampling:state.sampling,loras:state.loras,enable_refine:!!$('enableRefine')?.checked,control:state.control,continuation:state.continuation,audio_refinement:state.audioRefinement,sparse_attention:state.sparseAttention,preserve_reference_audio:preservedSoundtrack()};}
 function applySelection(action,before=null){
   const previous={...selectionSpec(),loras:state.loras.map(l=>({...l}))};let next=H3Configuration.normalizeSelection(previous,action,state.labCapabilities||{});
   if(previous.loras.some(l=>l.enabled&&H3Configuration.pikaVariant(l.name))&&!next.loras.some(l=>l.enabled&&H3Configuration.pikaVariant(l.name))){next.sampling={...(state.pikaBefore?.sampling||H3Configuration.defaults)};if(!['turbo','turbo_ref'].includes(next.render_method))next.steps=state.pikaBefore?.steps>=8?state.pikaBefore.steps:20;delete state.pikaBefore;next=H3Configuration.normalizeSelection(next,action,state.labCapabilities||{});}
-  state.modelProfile=next.model_profile;state.sampling=next.sampling;state.loras=next.loras.map(l=>Object.assign(state.loras.find(old=>old.name===l.name)||{},l));state.control=next.control||{enabled:false};state.audioRefinement=next.audio_refinement||{};
+  state.modelProfile=next.model_profile;state.sampling=next.sampling;state.loras=next.loras.map(l=>Object.assign(state.loras.find(old=>old.name===l.name)||{},l));state.control=next.control||{enabled:false};state.audioRefinement=next.audio_refinement||{};state.sparseAttention=next.sparse_attention||{};
   state.preserveReferenceAudio=!!next.preserve_reference_audio;if(!state.preserveReferenceAudio)state.preserveAudioSource=null;
   if(previous.model_profile!==next.model_profile){state.checkpoint=H3Configuration.preferredCheckpoint(next.model_profile,state.labCapabilities||{});}
   $('renderMethod').value=next.render_method;$('steps').value=String(next.steps);$('enableRefine').checked=!!next.enable_refine;
   if($('enableControl'))$('enableControl').checked=!!state.control.enabled;
   if(!selectedPika()&&Number($('steps').value)<8&&!turboMethod())restorePikaSampling();
-  if(action!=='reset'&&(previous.model_profile!==next.model_profile||previous.render_method!==next.render_method||previous.enable_refine!==next.enable_refine||previous.control?.enabled!==next.control?.enabled||previous.audio_refinement?.enabled!==next.audio_refinement?.enabled))info('Workflow updated automatically for this selection. Review the displayed model, steps and passes.');
+  if(action!=='reset'&&(previous.model_profile!==next.model_profile||previous.render_method!==next.render_method||previous.enable_refine!==next.enable_refine||previous.control?.enabled!==next.control?.enabled||previous.audio_refinement?.enabled!==next.audio_refinement?.enabled||previous.sparse_attention?.enabled!==next.sparse_attention?.enabled))info('Workflow updated automatically for this selection. Review the displayed model, steps and passes.');
   const notice=$('selectionChanges'),changes=H3Configuration.selectionChanges(before||previous,next);
   if(notice){notice.textContent=changes.length?'Automatically updated: '+changes.join('. ')+'.':'';notice.hidden=!changes.length;}
   refreshSelectionAvailability();
@@ -206,7 +206,7 @@ function applySelection(action,before=null){
 function refreshSelectionAvailability(){
   window.H3ConfigurationUI?.refreshSoundtrackSource();
   const spec=selectionSpec(),rules=H3Configuration.selectionRestrictions(spec),caps=state.labCapabilities||{};
-  for(const [id,reason,ready] of [['enableRefine',rules.refine,caps.refine_ready],['enableControl',rules.control,caps.controlnet_ready],['enhanceAudio',rules.audio,caps.audio_refine_ready]]){
+  for(const [id,reason,ready] of [['enableRefine',rules.refine,caps.refine_ready],['enableControl',rules.control,caps.controlnet_ready],['enhanceAudio',rules.audio,caps.audio_refine_ready],['enableSparseAttention',rules.sparse,caps.sparse_attention_ready]]){
     const field=$(id);if(field){field.disabled=!!state.busy||!!state.projectLoading||(id==='enhanceAudio'&&!!state.preserveReferenceAudio)||(!ready||!!reason)&&!field.checked;field.title=reason||(!ready?'Required runtime or model is unavailable.':'');}
   }
   $('steps').disabled=!!state.busy||!!state.projectLoading||!!selectedPika()||method()==='turbo_ref';
@@ -296,14 +296,14 @@ document.querySelectorAll(".mode").forEach(b => b.onclick = () => selectMode(b.d
 
 function saveDraft(){
   try{sessionStorage.setItem(draftKey,JSON.stringify({
-    modelProfile:state.modelProfile||"original",checkpoint:state.checkpoint,hybridPreset:state.hybridPreset||"none",sampling:state.sampling||{},nodeOptions:state.nodeOptions||{},audioRefinement:state.audioRefinement||{},dials:state.dials||[],refinement:state.refinement||{},refineScale:state.refineScale??1.25,preserveReferenceAudio:!!state.preserveReferenceAudio,preserveAudioSource:state.preserveAudioSource||null,styleDirection:state.styleDirection,mode:state.mode,promptMode:state.promptMode||"guided",prompts:{...state.prompts,[state.mode]:$("prompt").value},width:state.width,height:state.height,
+    modelProfile:state.modelProfile||"original",checkpoint:state.checkpoint,hybridPreset:state.hybridPreset||"none",sampling:state.sampling||{},nodeOptions:state.nodeOptions||{},audioRefinement:state.audioRefinement||{},sparseAttention:state.sparseAttention||{},dials:state.dials||[],refinement:state.refinement||{},refineScale:state.refineScale??1.25,preserveReferenceAudio:!!state.preserveReferenceAudio,preserveAudioSource:state.preserveAudioSource||null,styleDirection:state.styleDirection,mode:state.mode,promptMode:state.promptMode||"guided",prompts:{...state.prompts,[state.mode]:$("prompt").value},width:state.width,height:state.height,
     duration:$("duration").value,durationRequested:$("durationSeconds").value,steps:$("steps").value,seed:$("seed").value,refSize:$("refSize").value,renderMethod:method(),enableRefine:$("enableRefine")?$("enableRefine").checked:false
   }));}catch{}
 }
 function restoreDraft(){
   let draft;try{draft=JSON.parse(sessionStorage.getItem(draftKey)||"null");}catch{}
   if(!draft)return false;
-  state.modelProfile=draft.modelProfile||"original";state.checkpoint=draft.checkpoint;state.hybridPreset=draft.hybridPreset||"none";state.sampling=draft.sampling||{};state.nodeOptions=draft.nodeOptions||{};state.audioRefinement=draft.audioRefinement||{};state.dials=draft.dials||[];state.refinement=draft.refinement||{};state.refineScale=draft.refineScale??1.25;state.preserveReferenceAudio=!!draft.preserveReferenceAudio;state.preserveAudioSource=draft.preserveAudioSource||null;state.styleDirection=draft.styleDirection;
+  state.modelProfile=draft.modelProfile||"original";state.checkpoint=draft.checkpoint;state.hybridPreset=draft.hybridPreset||"none";state.sampling=draft.sampling||{};state.nodeOptions=draft.nodeOptions||{};state.audioRefinement=draft.audioRefinement||{};state.sparseAttention=draft.sparseAttention||{};state.dials=draft.dials||[];state.refinement=draft.refinement||{};state.refineScale=draft.refineScale??1.25;state.preserveReferenceAudio=!!draft.preserveReferenceAudio;state.preserveAudioSource=draft.preserveAudioSource||null;state.styleDirection=draft.styleDirection;
   state.promptMode=["guided","structured"].includes(draft.promptMode)?draft.promptMode:"guided";
   $("promptMode").value=state.promptMode;
   if(["text","frames","refs"].includes(draft.mode))state.mode=draft.mode;
@@ -345,7 +345,8 @@ function timingConfiguration(w=state.width,h=state.height){
   const adapters=H3Configuration.activeLorasInModelOrder(state.loras).map(x=>({name:x.name,strength:x.strength,
     refinement_strength:refine?(x.refinement_strength??(/Motion_Repair_V2/i.test(x.name)?.25:x.strength)):null}));
   if(turboMethod())adapters.push({name:method()==="turbo_ref"?H3Configuration.TURBO_REF:turboName,strength:1,refinement_strength:null});
-  return {version:2,gpu:state.gpu,runtime:state.timingRuntime||null,attention_backend:state.labCapabilities?.server_attention?.implementation||"unrecorded",model:selectedCheckpoint(),sampling:turboMethod()?{...state.sampling,sampler_name:method()==="turbo_ref"?"euler":"h3_turbo",scheduler:"simple",cfg:1,denoise:1,shift_video:12,shift_audio:3}:state.sampling||{},audio_refinement:state.audioRefinement||{},model_profile:state.modelProfile||"original",hybrid_preset:state.hybridPreset||"none",node_options:state.nodeOptions||{},mode:state.mode,method:method(),
+  let sparseTiming=null;if(state.sparseAttention?.enabled){try{sparseTiming=H3Configuration.resolveSparseAttention({sparse_attention:state.sparseAttention});}catch{}}
+  return {version:2,gpu:state.gpu,runtime:state.timingRuntime||null,attention_backend:state.labCapabilities?.server_attention?.implementation||"unrecorded",model:selectedCheckpoint(),sampling:turboMethod()?{...state.sampling,sampler_name:method()==="turbo_ref"?"euler":"h3_turbo",scheduler:"simple",cfg:1,denoise:1,shift_video:12,shift_audio:3}:state.sampling||{},audio_refinement:state.audioRefinement||{},...(sparseTiming?{sparse_attention:sparseTiming}:{}),model_profile:state.modelProfile||"original",hybrid_preset:state.hybridPreset||"none",node_options:state.nodeOptions||{},mode:state.mode,method:method(),
     width:canvas.width,height:canvas.height,...(newPreset?{output_canvas:{width:w,height:h},sampling_canvas:{width:canvas.width,height:canvas.height}}:{}),frames:Number($("duration").value),steps:Number($("steps").value),fps:24,adapters,...((state.dials||[]).some(d=>d.enabled)?{dials:state.dials.filter(d=>d.enabled)}:{}),
     sampler:selectedPika()?"euler":method()==="turbo_ref"?"euler":method()==="turbo"?"h3_turbo":"res_multistep",scheduler:"simple",cfg:1,denoise:1,
     references:state.mode==="refs"?orderedRefs().map(timingMedia):state.mode==="frames"?[state.first,state.last].map(x=>x?timingMedia(x):null):[],
@@ -942,7 +943,7 @@ function currentRenderSpec() {
   const refs = state.mode === "refs";
   return {
     dials:state.dials||[],
-    model_profile: state.modelProfile||"original", checkpoint:state.checkpoint,hybrid_preset:state.hybridPreset||"none",sampling:turboMethod()?{...state.sampling,sampler_name:method()==="turbo_ref"?"euler":"h3_turbo",scheduler:"simple",cfg:1,denoise:1,shift_video:12,shift_audio:3}:state.sampling||{},node_options:state.nodeOptions||{},audio_refinement:state.audioRefinement||{},refinement:state.refinement||{},refine_scale:state.refineScale??1.25,
+    model_profile: state.modelProfile||"original", checkpoint:state.checkpoint,hybrid_preset:state.hybridPreset||"none",sampling:turboMethod()?{...state.sampling,sampler_name:method()==="turbo_ref"?"euler":"h3_turbo",scheduler:"simple",cfg:1,denoise:1,shift_video:12,shift_audio:3}:state.sampling||{},node_options:state.nodeOptions||{},audio_refinement:state.audioRefinement||{},sparse_attention:state.sparseAttention||{},refinement:state.refinement||{},refine_scale:state.refineScale??1.25,
     mode: state.mode,
     prompt_mode: state.promptMode || "guided",
     source_prompt: $("prompt").value.trim(),
@@ -1732,6 +1733,8 @@ function openDetails(entry,trigger){
     if(settings.refine)row("Refinement",settings.refine.scale+"× · "+settings.refine.steps+" steps · denoise "+settings.refine.denoise);
     const audioPass=settings.timingConfiguration?.audio_refinement;
     if(audioPass?.enabled)row("Audio enhancement",settings.timingConfiguration?.preserve_reference_audio?"Bypassed · source soundtrack preserved":(audioPass.steps??6)+" steps · denoise "+(audioPass.denoise??.5)+" · exact video preserved");
+    const sparsePass=settings.timingConfiguration?.sparse_attention;
+    if(sparsePass?.enabled)row("Sparse attention","Sol-Attn · tau "+sparsePass.tau+" · "+Math.round(sparsePass.start_percent*100)+"%–"+Math.round(sparsePass.end_percent*100)+"% · extra "+sparsePass.extra_tokens+" · "+sparsePass.sink_conditioning);
     if(settings.control?.enabled)row("Control","Fun-ControlNet 2.0 · "+settings.control.kind+" · strength "+settings.control.strength+" · range "+settings.control.start_percent+"–"+settings.control.end_percent);
     if(settings.preparation)row("Prompt preparation",settings.preparation.model||"AI context");
   }else{

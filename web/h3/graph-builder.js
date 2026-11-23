@@ -238,6 +238,28 @@
       g["8"].inputs.model = [methodId, 0];
     }
 
+    if (renderSpec.sparse_attention?.enabled) {
+      if (!capabilities.sparse_attention_ready) throw new Error('Sol-Attn sparse attention is unavailable on this server.');
+      const sparse = Configuration.resolveSparseAttention(renderSpec);
+      const sparseId = allocate(65);
+      g[sparseId] = {
+        class_type: "BlockSparseAttention",
+        inputs: {
+          model: g["8"].inputs.model,
+          selection: "sol-attn",
+          "selection.tau": sparse.tau,
+          start_percent: sparse.start_percent,
+          end_percent: sparse.end_percent,
+          dense_blocks: "",
+          min_tokens: 12288,
+          extra_tokens: sparse.extra_tokens,
+          sink_conditioning: sparse.sink_conditioning,
+          verbose: false
+        }
+      };
+      g["8"].inputs.model = [sparseId, 0];
+    }
+
     // Frames mode inputs
     if (mode === 'frames') {
       const frames = renderSpec.frames || {};
@@ -394,9 +416,15 @@
         const shiftId = allocate(150);g[shiftId]={class_type:'MiniMaxH3SigmaShift',inputs:{model:stageLink,shift_video:config.settings.shift_video,shift_audio:config.settings.shift_audio}};
         refinementModel = [shiftId,0];
         if(method==='spectrum'||method==='motioncache'){
-          const source=g[g['8'].inputs.model[0]],patchId=allocate(150);
+          const patchClass=method==='spectrum'?'SpectrumApplyMiniMaxH3':'MiniMaxH3MotionCache';
+          const source=Object.values(g).find(n=>n.class_type===patchClass),patchId=allocate(150);
           g[patchId]={class_type:source.class_type,inputs:{...source.inputs,model:refinementModel}};
           refinementModel=[patchId,0];
+        }
+        if(renderSpec.sparse_attention?.enabled){
+          const sparseSource=Object.values(g).find(n=>n.class_type==='BlockSparseAttention'),sparsePatchId=allocate(150);
+          g[sparsePatchId]={class_type:'BlockSparseAttention',inputs:{...sparseSource.inputs,model:refinementModel}};
+          refinementModel=[sparsePatchId,0];
         }
       }
       const separateId = allocate(100);

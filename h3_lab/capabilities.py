@@ -8,6 +8,31 @@ import inspect
 import os
 import pathlib
 import shutil
+import sys
+
+
+def _sparse_attention_ready(registered_nodes: dict) -> bool:
+    """Return True when BlockSparseAttention and Sol-Attn CUDA support are ready."""
+    if "BlockSparseAttention" not in registered_nodes:
+        return False
+    kitchen = sys.modules.get("comfy_kitchen")
+    if kitchen is None or not callable(getattr(kitchen, "sol_attn_is_available", None)):
+        return True
+    try:
+        management = sys.modules.get("comfy.model_management")
+        if management is not None and callable(getattr(management, "get_torch_device", None)):
+            device = management.get_torch_device()
+        else:
+            torch_mod = sys.modules.get("torch")
+            if torch_mod is not None and hasattr(torch_mod, "device"):
+                cuda_mod = getattr(torch_mod, "cuda", None)
+                use_cuda = bool(cuda_mod and callable(getattr(cuda_mod, "is_available", None)) and cuda_mod.is_available())
+                device = torch_mod.device("cuda" if use_cuda else "cpu")
+            else:
+                return False
+        return bool(kitchen.sol_attn_is_available(device))
+    except (AttributeError, RuntimeError, TypeError, ValueError, OSError):
+        return False
 
 
 def check_capabilities(folder_paths_module=None, nodes_module=None) -> dict:
@@ -154,6 +179,7 @@ def check_capabilities(folder_paths_module=None, nodes_module=None) -> dict:
         "inference_enabled": True,
         "reason": None,
         'audio_refine_ready': all(name in registered_nodes for name in ('H3StudioAudioRefineMask', 'H3StudioAudioRestoreVideo')),
+        'sparse_attention_ready': _sparse_attention_ready(registered_nodes),
         "server_attention": runtime_attention(),
         "controlnet_references_ready": not control_missing and reference_control_supported(),
         "control_still_ready": not control_missing and ffmpeg_ok and ffprobe_ok,

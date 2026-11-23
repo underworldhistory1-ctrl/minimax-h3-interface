@@ -8,6 +8,71 @@ ANIME_TO_REALISM = 'Anime2Realsim__H3.safetensors'
 SPATIAL_PHYSICS = 'wushu_spatial_physics_clean_3000_pruned.safetensors'
 VBVR = 'H3-Licon-VBVR-I2V.safetensors'
 
+SPARSE_DEFAULTS = {
+    'tau': 1.3,
+    'start_percent': 0.2,
+    'end_percent': 1.0,
+    'extra_tokens': 256,
+    'sink_conditioning': 'exact_kv_and_rows',
+}
+
+
+def validate_sparse_attention(spec, capabilities):
+    """Validate optional BlockSparseAttention (Sol-Attn) configuration and graph nodes."""
+    import math
+    graph = spec.get('workflow', {})
+    options = spec.get('sparse_attention')
+    if options is None:
+        options = {}
+    if not isinstance(options, dict) or set(options) - {'enabled', *SPARSE_DEFAULTS}:
+        raise ValueError('Invalid sparse attention declaration')
+    if 'enabled' in options and type(options['enabled']) is not bool:
+        raise ValueError('Sparse attention enabled must be boolean')
+    sparse_nodes = [n for n in graph.values() if isinstance(n, dict) and n.get('class_type') == 'BlockSparseAttention']
+    if not options.get('enabled'):
+        if sparse_nodes:
+            raise ValueError('Sparse attention node present while disabled')
+        return None
+    if not capabilities.get('sparse_attention_ready'):
+        raise ValueError('Sparse attention runtime is unavailable on this server')
+    if spec.get('render_method') in ('turbo', 'turbo_ref'):
+        raise ValueError('Sparse attention cannot be combined with retired Turbo v4')
+    values = {**SPARSE_DEFAULTS, **options}
+    tau = values['tau']
+    start_percent = values['start_percent']
+    end_percent = values['end_percent']
+    extra_tokens = values['extra_tokens']
+    sink_conditioning = values['sink_conditioning']
+    if type(tau) not in (int, float) or not math.isfinite(tau) or not 0 <= tau <= 4:
+        raise ValueError('Invalid sparse attention tau')
+    for field_name, bound in (('start_percent', start_percent), ('end_percent', end_percent)):
+        if type(bound) not in (int, float) or not math.isfinite(bound) or not 0 <= bound <= 1:
+            raise ValueError(f'Invalid sparse attention {field_name}')
+    if start_percent > end_percent:
+        raise ValueError('Sparse attention start_percent must not exceed end_percent')
+    if type(extra_tokens) is not int or not 0 <= extra_tokens <= 256 or extra_tokens % 64 != 0:
+        raise ValueError('Invalid sparse attention extra_tokens')
+    if sink_conditioning not in ('exact_kv_and_rows', 'exact_kv', 'off'):
+        raise ValueError('Invalid sparse attention sink_conditioning')
+    expected_inputs = {
+        'selection': 'sol-attn',
+        'selection.tau': float(tau),
+        'start_percent': float(start_percent),
+        'end_percent': float(end_percent),
+        'dense_blocks': '',
+        'min_tokens': 12288,
+        'extra_tokens': extra_tokens,
+        'sink_conditioning': sink_conditioning,
+        'verbose': False,
+    }
+    if not sparse_nodes:
+        raise ValueError('Sparse attention runtime enabled but BlockSparseAttention node is missing')
+    for node in sparse_nodes:
+        actual = {k: v for k, v in node.get('inputs', {}).items() if k != 'model'}
+        if actual != expected_inputs:
+            raise ValueError('Submitted sparse attention settings disagree with the configuration')
+    return expected_inputs
+
 
 def validate_audio_refinement(spec, capabilities):
     import math
@@ -380,6 +445,7 @@ def _validate_execution_path(spec, graph, audio_sampler, capabilities):
         expected=[graph['1']['class_type']]+[adapter_class]*adapter_count+['DialsApplyDial']*len([d for d in spec.get('dials',[]) if d.get('enabled')])+['MiniMaxH3SigmaShift']
         if (spec.get('control') or {}).get('enabled'):expected.append('MiniMaxH3FunControlNetApply')
         if expected_patch:expected.append(expected_patch)
+        if (spec.get('sparse_attention') or {}).get('enabled'):expected.append('BlockSparseAttention')
         if [graph[k].get('class_type') for k in reversed(path)]!=expected:raise ValueError('Selected model layers/order disagree')
         acceleration_defaults={
             'SpectrumApplyMiniMaxH3':{'enabled':True,'blend_weight':.5,'degree':1,'ridge_lambda':.1,'window_size':2,'flex_window':.75,'warmup_steps':1,'tail_actual_steps':1,'max_history':2,'debug':False,'history_storage':'system_ram','offline_archive_storage':'system_ram','audio_blend_weight':0,'offline_smoothing_replay':False},
@@ -446,7 +512,7 @@ def validate_configuration(spec, capabilities):
     if not isinstance(graph,dict) or any(not isinstance(n,dict) or not isinstance(n.get('inputs',{}),dict) for n in graph.values()):raise ValueError('Workflow nodes require object inputs')
     for value in spec.get('workflow',{}).values():
         if 'lora_name' in value.get('inputs',{}) and not isinstance(value['inputs']['lora_name'],str): raise ValueError('Graph adapter filenames must be strings')
-    for field in ('sampling','control','audio_refinement','refinement','continuation','node_options','frames'):
+    for field in ('sampling','control','audio_refinement','sparse_attention','refinement','continuation','node_options','frames'):
         if spec.get(field) is not None and not isinstance(spec[field],dict): raise ValueError(field+' must be an object')
     for field in ('loras','references','guides','dials'):
         values=spec.get(field,[])
@@ -461,6 +527,7 @@ def validate_configuration(spec, capabilities):
         if type(strength) not in (int,float) or not math.isfinite(strength) or not -20<=strength<=20: raise ValueError('Invalid Dial strength')
     pika = validate_pika(spec)
     audio_sampler = validate_audio_refinement(spec, capabilities)
+    validate_sparse_attention(spec, capabilities)
     validate_character_swap(spec)
     validate_anime_to_realism(spec)
     graph = spec.get('workflow', {})

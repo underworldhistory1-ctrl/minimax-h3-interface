@@ -1,11 +1,15 @@
 /* Capability-driven studio controls. Values belong to drafts, never to DOM-only presets. */
 (function(){
   'use strict';
-  state.sampling=state.sampling||{};state.nodeOptions=state.nodeOptions||{};state.refinement=state.refinement||{};
+  state.sampling=state.sampling||{};state.nodeOptions=state.nodeOptions||{};state.refinement=state.refinement||{};state.sparseAttention=state.sparseAttention||{};
   const panel=document.createElement('section');panel.className='panel';panel.id='modelConfiguration';
   panel.innerHTML='<h2>Model &amp; workflow</h2><div class="workflow-help" data-guidance-key="model" lang="en" dir="ltr">Start with Original. Choose the model here, then the input below: Text for a description, Frames for opening/closing images, or References for characters, locations and storyboards. Missing options are disabled. Changing the model does not automatically change your canvas or steps.</div><div class="tip">Model profile chooses base weights. Pika Flex Turbo is a managed LoRA on a compatible base, with automatic sampling. Singularity is a replacement checkpoint; extra creative LoRAs are optional. Singularity v2 recommends focused prompts within about 5,000 characters, not a minimum.</div><label for="modelProfile">H3 checkpoint family</label><select id="modelProfile"></select><label for="checkpoint">Installed checkpoint</label><select id="checkpoint"></select><div id="checkpointNotice" class="tip" role="status"></div><div id="serverAttention" class="tip" role="note"></div><label for="hybridPreset">Tensor overlay</label><select id="hybridPreset"><option value="none">None · single FL2VA baseline</option><option value="block_range_adaln">AdaLN blocks 45–49</option><option value="all_adaln">All AdaLN · community experiment</option></select><details id="samplingControls"><summary>Advanced sampling &amp; acceleration</summary><div class="workflow-help workflow-help-warning" data-guidance-key="sampling" lang="en" dir="ltr">These are the actual render settings, saved with the project. Start with the original settings; acceleration can change the result. Restore baseline settings resets the sampling settings.</div><div id="samplingFields" class="configuration-grid"></div><div id="patchFields" class="configuration-grid"></div><details><summary>Refinement pass settings</summary><div id="refinementFields" class="configuration-grid"></div></details><button id="resetSampling" type="button" class="button alt smallbtn">Restore baseline settings</button></details><details><summary>Style prompt presets</summary><div class="workflow-help" data-guidance-key="style" lang="en" dir="ltr">Upload the source video in References, choose a transformation direction, then Prepare. This regenerates a video guided by the source; it is not an exact frame-by-frame conversion. Reuse source soundtrack keeps the original audio when it is long enough.</div><label for="styleDirection">Direction</label><select id="styleDirection"><option value="anime_to_realism">Anime → realism</option><option value="realism_to_anime">Realism → anime</option></select><div id="styleAdapterNotice" class="tip" role="status"></div><label for="preserveAudio"><input id="preserveAudio" type="checkbox"> Reuse source soundtrack</label><button id="applyStyle" type="button" class="button alt smallbtn">Apply style prompt preset</button><div class="tip" data-guidance-key="configHelp1" lang="en" dir="ltr">This shortcut enables the Anime → Realism LoRA and writes a source-video prompt with LumiReal. It preserves your selected model, method, keyframes and other adapters. You can also select the LoRA manually. Realism → Anime writes a prompt and disables only the one-way Anime → Realism adapter.</div></details>';
   const audioPanel=document.createElement('details');audioPanel.id='audioEnhancementPanel';
-  panel.querySelector('#checkpointNotice').insertAdjacentHTML('afterend','<label for="pikaAcceleration">Pika Flex Turbo</label><select id="pikaAcceleration" aria-describedby="pikaAccelerationNotice"></select><div id="pikaAccelerationNotice" class="tip" role="note"></div>');
+  panel.querySelector('#checkpointNotice').insertAdjacentHTML('afterend','<label for="pikaAcceleration">Pika Flex Turbo</label><select id="pikaAcceleration" aria-describedby="pikaAccelerationNotice"></select><div id="pikaAccelerationNotice" class="tip" role="note"></div><details id="sparseAttentionPanel" style="margin-top:10px"><summary>Sol-Attn Sparse Attention · faster 1080p</summary><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input id="enableSparseAttention" type="checkbox" style="width:auto"> Enable Sol-Attn Sparse Attention</label><div id="sparseAttentionNotice" class="tip" role="status"></div><div id="sparseAttentionFields" class="configuration-grid"></div></details>');
+  panel.querySelector('#enableSparseAttention').onchange=()=>{
+    state.sparseAttention={...H3Configuration.SPARSE_DEFAULTS,...state.sparseAttention,enabled:panel.querySelector('#enableSparseAttention').checked};
+    refresh();changed();
+  };
   function refreshPikaControls(){
     const select=$('pikaAcceleration'),family=state.mode==='refs'?'ref2va':'fl2va';
     const active=state.loras.find(l=>l.enabled&&H3Configuration.pikaVariant(l.name));
@@ -150,7 +154,7 @@
   };
   $('checkpoint').onchange=()=>{if(state.busy)return;state.checkpoint=$('checkpoint').value;applySelection('profile');refresh();changed();updateCapabilities();};
   $('hybridPreset').onchange=()=>{state.hybridPreset=$('hybridPreset').value;changed();};
-  $('resetSampling').onclick=()=>{state.sampling={};state.nodeOptions={};state.refinement={};state.refineScale=1.25;applySelection('reset');refresh();changed();};
+  $('resetSampling').onclick=()=>{state.sampling={};state.nodeOptions={};state.refinement={};state.sparseAttention={};state.refineScale=1.25;applySelection('reset');refresh();changed();};
   $('styleDirection').onchange=()=>{state.styleDirection=$('styleDirection').value;refresh();changed();};
   const sourceWrap=document.createElement('div'),sourceLabel=document.createElement('label'),audioSource=document.createElement('select');sourceLabel.textContent='Output soundtrack source';sourceLabel.htmlFor='preserveAudioSource';audioSource.id='preserveAudioSource';sourceWrap.append(sourceLabel,audioSource);$('preserveAudio').parentElement.after(sourceWrap);
   let audioSourceSignature='';
@@ -250,6 +254,27 @@
     const audioFields=$('audioEnhancementFields');audioFields.replaceChildren();
     for(const [key,d] of Object.entries({steps:['INT',{min:1,max:20}],denoise:['FLOAT',{min:.01,max:1,step:.01}],sampler_name:descriptors.sampler_name,scheduler:descriptors.scheduler}))field(audioFields,'audio_'+key,key.replaceAll('_',' '),audioOptions[key],d,value=>{state.audioRefinement={...state.audioRefinement,[key]:value};});
     for(const input of audioFields.querySelectorAll('input,select'))input.disabled=state.busy||state.projectLoading||!audioOptions.enabled||!caps.audio_refine_ready||!!restrictions.audio;
+    const sparseOptions={enabled:false,...H3Configuration.SPARSE_DEFAULTS,...state.sparseAttention};
+    $('enableSparseAttention').checked=!!sparseOptions.enabled;
+    $('enableSparseAttention').disabled=state.busy||state.projectLoading||(!caps.sparse_attention_ready||!!restrictions.sparse)&&!$('enableSparseAttention').checked;
+    $('sparseAttentionNotice').textContent=restrictions.sparse?restrictions.sparse:!caps.sparse_attention_ready?'BlockSparseAttention (Comfy Kitchen Sol-Attn CUDA) is unavailable on this server.':'ComfyUI native Sol-Attn (training-free sparse attention). Skips redundant attention blocks on long/1080p renders while keeping references, prompt, audio, and the first 20% of steps dense. Stackable with Pika 8-Step and 4-Step.';
+    const sparseFields=$('sparseAttentionFields');sparseFields.replaceChildren();
+    const sparseDescriptors=[
+      ['tau','Tau (sparsity)',['FLOAT',{min:0,max:4,step:.05}]],
+      ['start_percent','Start percent',['FLOAT',{min:0,max:1,step:.05}]],
+      ['end_percent','End percent',['FLOAT',{min:0,max:1,step:.05}]],
+      ['extra_tokens','Extra tokens',[[0,64,128,192,256]]],
+      ['sink_conditioning','Conditioning protection',[['exact_kv_and_rows','exact_kv','off']]],
+    ];
+    for(const [key,label,d] of sparseDescriptors)field(sparseFields,'sparse_'+key,label,sparseOptions[key],d,value=>{
+      const normalized=key==='extra_tokens'?Number(value):value;
+      const next={...H3Configuration.SPARSE_DEFAULTS,...state.sparseAttention,[key]:normalized};
+      if(key==='start_percent'&&normalized>next.end_percent)next.end_percent=normalized;
+      if(key==='end_percent'&&normalized<next.start_percent)next.start_percent=normalized;
+      state.sparseAttention=next;
+      if(key==='start_percent'||key==='end_percent')refresh();
+    });
+    for(const input of sparseFields.querySelectorAll('input,select'))input.disabled=state.busy||state.projectLoading||!sparseOptions.enabled||!caps.sparse_attention_ready||!!restrictions.sparse;
     const patches=$('patchFields');patches.replaceChildren();
     const klass=method()==='spectrum'?'SpectrumApplyMiniMaxH3':method()==='motioncache'?'MiniMaxH3MotionCache':null;
     if(klass&&caps.node_schemas?.[klass]){
