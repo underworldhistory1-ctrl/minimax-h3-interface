@@ -169,6 +169,24 @@ class TestH3Projects(unittest.TestCase):
         self.assertTrue(asset_file.is_file(), "Copied project asset must survive deletion of original Qwen result")
         self.assertEqual(asset_file.read_bytes(), b"\x89PNG\r\n\x1a\nqwenpixeldata")
 
+    def test_qwen_image_import_into_elements_sets_category_role_and_name(self):
+        proj = self.project_service.create_project(name="Qwen Elements")
+        pid = proj["project_id"]
+        qwen_dir = self.storage_root / "qwen_outputs"
+        qwen_dir.mkdir(parents=True, exist_ok=True)
+        qwen_img = qwen_dir / "qwen_studio_prop_00001.png"
+        qwen_img.write_bytes(b"\x89PNG\r\n\x1a\nqwenpropdata")
+
+        imported = self.project_service.import_qwen_image(
+            str(qwen_img), project_id=pid, as_role="reference", category="props", name="Golden Sword"
+        )
+        updated = self.project_service.get_project(pid)
+        entry = next(a for a in updated["assets"] if a["asset_id"] == imported["asset_id"])
+        self.assertEqual(entry["category"], "props")
+        self.assertEqual(entry["role"], "object")
+        self.assertEqual(entry["name"], "Golden Sword")
+        self.assertEqual(entry["alias"], "Golden_Sword")
+
 
 if __name__ == "__main__":
     unittest.main()

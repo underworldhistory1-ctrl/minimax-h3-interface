@@ -21,7 +21,14 @@
 .profile-note{background:#292f1c;border:1px solid #617226;border-radius:8px;padding:9px;margin-top:9px;color:#dfe8c8;font-size:10px}.profile-note strong{color:var(--acid)}
 .ref{grid-template-columns:52px minmax(0,1fr) auto;align-items:start;overflow:hidden}.ref>div{min-width:0}.ref-alias-row{grid-column:1/-1;width:100%}.ref .ref-name{min-width:0;max-width:100%;margin-top:0}.ref-insert{grid-column:1/-1;width:100%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ref small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mention-list button{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ref-order{grid-column:1/-1;display:flex;gap:6px;align-items:center;flex-wrap:wrap}.ref-order span{margin-right:auto;color:var(--muted);font-size:10px}.ref-order button{padding:4px 7px}
-@media(max-width:900px){.shell{grid-template-columns:330px minmax(0,1fr)}.right{padding:18px}.stage{min-height:260px}}@media(max-width:720px){.top{height:58px;padding:0 14px}.topnav{margin-left:10px;gap:12px}.topnav a{height:58px}.connection span{max-width:90px}.shell{height:auto;display:flex;flex-direction:column}.left{border-right:0;overflow:visible}.right{overflow:visible;padding-bottom:110px}.actiondock{position:fixed;left:0;right:0;bottom:0;box-shadow:0 -12px 28px #0009}.stage{min-height:230px}.controls{grid-template-columns:1fr}.brand-name{display:none}}@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+.elements-disclosure>summary{cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:700;font-size:13px}.elements-disclosure>summary::-webkit-details-marker{display:none}
+.elements-controls{display:grid;gap:7px;margin-top:9px;min-width:0}.elements-grid{display:grid;gap:7px;margin-top:9px;max-height:260px;overflow-y:auto;min-width:0}
+.element-card{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:8px;align-items:center;border:1px solid #383838;background:#222;border-radius:8px;padding:7px;min-width:0;max-width:100%}
+.element-card.attached{border-color:#617226;background:#232919}.element-card img{width:44px;height:44px;border-radius:6px;object-fit:cover;border:1px solid #444;background:#161616}
+.element-meta{min-width:0;overflow:hidden}.element-meta strong{display:block;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.element-meta small{display:block;font-size:9px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.element-badge{display:inline-block;padding:1px 6px;border-radius:999px;font-size:9px;font-weight:700;background:#2a3319;color:var(--acid);border:1px solid #4f6123;margin-right:4px}
+.element-save-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:7px;margin-top:8px;align-items:center;min-width:0}.element-save-row>*{min-width:0}
+@media(max-width:900px){.shell{grid-template-columns:330px minmax(0,1fr)}.right{padding:18px}.stage{min-height:260px}}@media(max-width:720px){.top{height:58px;padding:0 14px}.topnav{margin-left:10px;gap:12px}.topnav a{height:58px}.connection span{max-width:90px}.shell{height:auto;display:flex;flex-direction:column}.left{border-right:0;overflow:visible}.right{overflow:visible;padding-bottom:110px}.actiondock{position:fixed;left:0;right:0;bottom:0;box-shadow:0 -12px 28px #0009}.stage{min-height:230px}.controls,.element-save-row{grid-template-columns:1fr}.brand-name{display:none}}@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 .brand{border:0;padding:0;background:none;color:inherit;font:inherit}.brand:focus-visible{outline:2px solid var(--acid);outline-offset:6px;border-radius:8px}
 </style>
 </head>
@@ -37,6 +44,19 @@
   <div class="sidebar">
    <div class="section-tabs"><span>Create Image</span><span>Qwen workflow</span></div>
    <div class="model-hero"><div class="eyebrow">MODEL · QWEN IMAGE 2.1</div><h1>Qwen Image 2.1</h1><p data-guidance-key="imageHelp1" lang="en" dir="ltr">Create images from a prompt, with optional visual references.</p></div>
+   <section class="panel" id="projectElementsPanel">
+    <details id="projectElementsDisclosure" class="elements-disclosure" open>
+     <summary><span>Project Elements</span><span id="imageElementsCount" class="tip">Characters · Props · Locations</span></summary>
+     <p style="margin-top:6px">Reuse Characters, Props, Locations, Style and other project elements directly as Qwen references. Selecting an element maps its role, @mention and notes automatically.</p>
+     <div class="elements-controls">
+      <div class="row"><select id="imageProjectSelect" aria-label="Project for Elements"><option value="">No project selected</option></select><button id="refreshImageElements" type="button" class="button alt small" style="flex:0 0 auto">Refresh</button></div>
+      <div class="row"><select id="imageElementCategoryFilter" aria-label="Filter Elements by category"><option value="all">All categories</option></select><input id="imageElementSearch" type="search" aria-label="Search Project Elements" placeholder="Filter by name or @alias"></div>
+      <div class="row"><button id="uploadImageElement" type="button" class="button alt small">+ Upload to Elements</button><input id="uploadImageElementFile" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden></div>
+     </div>
+     <div id="imageElementsStatus" class="tip" role="status"></div>
+     <div id="imageElementsList" class="elements-grid"></div>
+    </details>
+   </section>
    <section class="panel" id="editPanel">
     <h2>References <span id="referenceCount" class="tip">Optional</span></h2><p data-guidance-key="imageHelp2" lang="en" dir="ltr">Add up to 10 images. By default Image 1 sets the output canvas; change Output settings anytime to choose a different size. Other images add visual context. Arrange them below, then name each image in the prompt to say what to keep or combine.</p>
     <div class="uploadbox"><button id="addReferences" type="button" class="button alt small">+ Add images</button><span class="tip" data-guidance-key="imageHelp3" lang="en" dir="ltr">PNG, JPG or WebP · 25 MB each · 10 maximum</span></div>
@@ -81,7 +101,7 @@
   <div class="stage-top"><h2>Image workspace</h2><span>Prompt · references · download</span></div>
   <div id="stage" class="stage"><div class="stage-empty"><b>Your image will appear here</b>Write a prompt, add references if needed, then generate.</div></div>
   <div class="output"><div class="statusline"><span id="status">Connect ComfyUI to begin</span><span id="percent">—</span></div><div id="progressBar" class="progress"><i id="progressFill"></i></div><div class="statusline"><span id="timer">—</span><span id="remaining">Time remaining: —</span></div><div id="queueInfo" class="tip">Queue: —</div></div>
-  <div id="currentActions" class="output hidden"><strong>Current image</strong><div class="secondary"><button id="details" class="button alt">Settings</button><button id="download" class="button">Download</button><select id="h3HandoffRole" aria-label="H3 destination"><option value="reference">H3 reference</option><option value="start_frame">H3 start frame</option><option value="end_frame">H3 end frame</option></select><button id="sendToH3" class="button alt" style="border-color:var(--acid);color:var(--acid)">Send to H3 Video</button><button id="editCurrent" type="button" class="button alt">Edit in Qwen</button><button id="addCurrentReference" type="button" class="button alt">Add as reference</button><button id="deleteCurrent" class="button alt">Delete</button></div></div>
+  <div id="currentActions" class="output hidden"><strong>Current image</strong><div class="secondary"><button id="details" class="button alt">Settings</button><button id="download" class="button">Download</button><select id="h3HandoffRole" aria-label="H3 destination"><option value="reference">H3 reference</option><option value="start_frame">H3 start frame</option><option value="end_frame">H3 end frame</option></select><button id="sendToH3" class="button alt" style="border-color:var(--acid);color:var(--acid)">Send to H3 Video</button><button id="editCurrent" type="button" class="button alt">Edit in Qwen</button><button id="addCurrentReference" type="button" class="button alt">Add as reference</button><button id="deleteCurrent" class="button alt">Delete</button></div><div id="saveToElementsRow" class="element-save-row"><select id="saveElementCategory" aria-label="Save element category"><option value="characters">Characters</option><option value="props">Props</option><option value="locations">Locations</option><option value="styles">Style</option><option value="storyboards">Storyboards</option><option value="custom">Custom</option></select><input id="saveElementName" type="text" maxlength="64" placeholder="Element name (optional)" aria-label="Element name"><button id="saveToElements" type="button" class="button alt">Save to Elements</button></div></div>
   <div class="history-head"><h2>Generated images <span id="imageCount" class="tip"></span></h2><button id="refreshLibrary" class="button alt small">Refresh</button></div>
   <div id="results" class="results"></div><button id="showMore" type="button" class="button alt hidden" style="display:block;margin:14px auto">Show more</button><div id="emptyHistory" class="empty">Your generated images will appear here.</div>
  </section>
@@ -92,14 +112,14 @@
 <script src="./h3/uuid.js?v=20261103-interface-2.9.0"></script>
 <script src="./h3/tab-session.js?v=20261103-interface-2.9.0"></script>
 <script src="./h3/tab-draft-store.js?v=20261103-interface-2.9.0"></script>
-<script src="./h3/image-reference-store.js?v=20261115-interface-2.17.1"></script>
+<script src="./h3/image-reference-store.js?v=20261125-image-elements"></script>
 <script src="./h3/vendor/sortable.min.js?v=1.15.7"></script>
 <script src="./h3/drag-sort.js?v=20261104-interface-2.13.0"></script>
 <script src="./h3/reference-order.js?v=20261104-interface-2.13.0"></script>
 <script src="./h3/workspace-layout.js?v=20261104-interface-2.13.0"></script>
-<script src="./h3/qwen-reference-plan.js?v=20261115-qwen"></script>
+<script src="./h3/qwen-reference-plan.js?v=20261125-image-elements"></script>
 <script src="./h3/timing-estimator.js?v=20261115-interface-2.17.3"></script>
-<script src="./image-studio.js?v=20261115-interface-2.17.3"></script>
+<script src="./image-studio.js?v=20261125-image-elements"></script>
 <script src="./h3/updates-ui.js?v=20261115-interface-2.17.3"></script>
 <link rel="stylesheet" href="./studio-ux.css?v=20261115-interface-2.17.3">
 <script src="./h3/studio-ux.js?v=20261104-interface-2.13.0"></script>

@@ -789,7 +789,8 @@ class ProjectService(OrganizationMixin):
             return manifest_data
 
     def import_qwen_image(self, qwen_image_path: str, project_id: str,
-                          as_role: str = "reference", alias: str = None) -> dict:
+                          as_role: str = "reference", alias: str = None,
+                          category: str = None, name: str = None) -> dict:
         """
         Copy and register a saved Qwen image as a project asset.
         Decoupled from original Qwen output file.
@@ -811,17 +812,21 @@ class ProjectService(OrganizationMixin):
 
         project = self.get_project(project_id) if project_id else None
         if project:
-            alias_name = alias or f"qwen_{src.stem[-4:]}"
-            asset_entry = {
-                "asset_id": asset_record["asset_id"],
-                "alias": alias_name,
-                "kind": "image",
-                "role": as_role,
-                "server_path": asset_record["server_path"],
-                "content_hash": asset_record["content_hash"],
-            }
-            project.setdefault("assets", []).append(asset_entry)
-            self.save_project(project_id, project, expected_revision=project.get("revision", 1))
+            if category is not None or name is not None:
+                element_label = name if (name is not None and str(name).strip()) else (alias or f"qwen_{src.stem[-4:]}")
+                self.attach_asset(project_id, asset_record, category=category, name=element_label)
+            else:
+                alias_name = alias or f"qwen_{src.stem[-4:]}"
+                asset_entry = {
+                    "asset_id": asset_record["asset_id"],
+                    "alias": alias_name,
+                    "kind": "image",
+                    "role": as_role,
+                    "server_path": asset_record["server_path"],
+                    "content_hash": asset_record["content_hash"],
+                }
+                project.setdefault("assets", []).append(asset_entry)
+                self.save_project(project_id, project, expected_revision=project.get("revision", 1))
 
         return asset_record
 

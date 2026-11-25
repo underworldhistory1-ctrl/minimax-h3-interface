@@ -191,6 +191,27 @@ class TestH3LabRoutes(AioHTTPTestCase):
         self.assertEqual(response.status, 400)
         self.assertEqual(self.services["projects"].get_project(project["project_id"])["assets"], [])
 
+    async def test_qwen_import_into_project_elements_preserves_category_and_name(self):
+        response = await self.client.post("/h3_studio/lab/projects", json={"name": "Elements Route"})
+        project = await response.json()
+        images_dir = self.storage_root / "images"
+        images_dir.mkdir(parents=True, exist_ok=True)
+        (images_dir / "qwen_studio_el_00001.png").write_bytes(b"\x89PNG\r\n\x1a\nelementbytes")
+        response = await self.client.post("/h3_studio/lab/import_qwen_image", json={
+            "image_filename": "qwen_studio_el_00001.png",
+            "project_id": project["project_id"],
+            "category": "props",
+            "name": "Magic Shield",
+        })
+        self.assertEqual(response.status, 201)
+        payload = await response.json()
+        self.assertIn("asset", payload)
+        self.assertIn("project", payload)
+        saved_entry = next(a for a in payload["project"]["assets"] if a["asset_id"] == payload["asset"]["asset_id"])
+        self.assertEqual(saved_entry["category"], "props")
+        self.assertEqual(saved_entry["role"], "object")
+        self.assertEqual(saved_entry["name"], "Magic Shield")
+
     async def test_cancelled_waiter_does_not_cancel_server_owned_export(self):
         import threading
         from types import SimpleNamespace

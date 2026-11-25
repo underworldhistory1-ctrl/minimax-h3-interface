@@ -17,3 +17,25 @@ test('plain references preserve existing prompts and multilingual aliases',()=>{
  assert.equal(plan.compile('Keep @شخص.',[{name:'شخص',role:'context'}]),'Keep <image1>.');
  assert.equal(plan.compile('A blue vase',[]),'A blue vase');
 });
+test('project elements map categories and roles to Qwen roles and unique aliases',()=>{
+ const cats=[
+  {id:'characters',name:'Characters',role:'character identity'},
+  {id:'locations',name:'Locations',role:'location'},
+  {id:'props',name:'Props',role:'object'},
+  {id:'styles',name:'Style',role:'visual style'},
+  {id:'storyboards',name:'Storyboards',role:'storyboard'},
+  {id:'custom',name:'Custom',role:'custom'},
+  {id:'wardrobe_custom',name:'Wardrobe',role:'custom'},
+ ];
+ assert.equal(plan.roleFromElement({category:'characters',role:'character identity'},cats),'identity');
+ assert.equal(plan.roleFromElement({category:'props',role:'object'},cats),'object');
+ assert.equal(plan.roleFromElement({category:'locations',role:'location'},cats),'background');
+ assert.equal(plan.roleFromElement({category:'styles',role:'visual style'},cats),'style');
+ assert.equal(plan.roleFromElement({category:'storyboards',role:'storyboard'},cats),'composition');
+ assert.equal(plan.roleFromElement({category:'custom',role:'custom'},cats),'custom');
+ assert.equal(plan.roleFromElement({category:'props'},cats),'object');
+ assert.equal(plan.roleFromElement({category:'unknown'},cats),'context');
+ assert.equal(plan.elementAlias({name:'Hero Sword.png'},[]),'Hero_Sword');
+ assert.equal(plan.elementAlias({name:'Hero Sword.png'},['hero_sword']),'Hero_Sword_2');
+ assert.equal(plan.elementAlias({name:'سيف ذهبي.webp'},[]),'سيف_ذهبي');
+});

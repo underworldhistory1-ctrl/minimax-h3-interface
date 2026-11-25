@@ -64,16 +64,17 @@ def prepare_video_source(source, destination, width, height, keep_seconds=5, fit
     target = pathlib.Path(destination)
     target.parent.mkdir(parents=True, exist_ok=True)
     command = [get_ffmpeg_path(), "-nostdin", "-v", "error", "-y", "-threads", "1",
-        "-protocol_whitelist", "file,pipe", "-ss", str(start), "-i", str(source)]
-    if not has_audio:
+        "-protocol_whitelist", "file,pipe", "-an", "-ss", str(start), "-i", str(source)]
+    if has_audio:
+        command += ["-protocol_whitelist", "file,pipe", "-vn", "-ss", str(start), "-i", str(source)]
+    else:
         command += ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"]
-    # One bounded graph avoids FFmpeg 8.0 stalling between independent video
-    # and audio filters when the source audio starts after the first picture.
+    # Separate video/audio demuxer inputs with one bounded graph avoid FFmpeg 8/9
+    # stalling when the source audio starts after the first picture.
     video_filter = f"fps=24,{sizing},setsar=1,tpad=stop_mode=clone:stop_duration=0.1"
     audio_filter = f"aresample=48000:async=1:first_pts=0,apad=whole_dur={use_duration},atrim=duration={use_duration}"
-    audio_input = "0:a:0" if has_audio else "1:a:0"
     command += ["-filter_complex_threads", "1", "-filter_complex",
-        f"[0:v:0]{video_filter}[h3v];[{audio_input}]{audio_filter}[h3a]",
+        f"[0:v:0]{video_filter}[h3v];[1:a:0]{audio_filter}[h3a]",
         "-map", "[h3v]", "-map", "[h3a]",
         "-frames:v", str(frames), "-t", str(use_duration), "-c:v", "libx264", "-threads", "1",
         "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p",

@@ -19,10 +19,21 @@ import uuid
 _LOG = logging.getLogger("h3_lab.assembly")
 
 
+def _resolve_windows_shim(found: str, name: str) -> str:
+    """Bypass Chocolatey ShimGen wrappers so subprocess timeouts kill real ffmpeg/ffprobe."""
+    if os.name == "nt" and found and "chocolatey\\bin\\" in found.lower():
+        tools = pathlib.Path(found).parent.parent / "lib" / "ffmpeg" / "tools"
+        if tools.is_dir():
+            for candidate in tools.rglob(f"{name}.exe"):
+                if candidate.is_file():
+                    return str(candidate)
+    return found
+
+
 def get_ffmpeg_path():
     found = shutil.which("ffmpeg")
     if found:
-        return found
+        return _resolve_windows_shim(found, "ffmpeg")
     local = os.environ.get("LOCALAPPDATA")
     if local:
         winget = pathlib.Path(local) / "Microsoft" / "WinGet" / "Links" / "ffmpeg.exe"
@@ -34,7 +45,7 @@ def get_ffmpeg_path():
 def get_ffprobe_path():
     found = shutil.which("ffprobe")
     if found:
-        return found
+        return _resolve_windows_shim(found, "ffprobe")
     local = os.environ.get("LOCALAPPDATA")
     if local:
         winget = pathlib.Path(local) / "Microsoft" / "WinGet" / "Links" / "ffprobe.exe"

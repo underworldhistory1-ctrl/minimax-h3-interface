@@ -9,6 +9,8 @@ class ImageUiContractTests(unittest.TestCase):
     def test_image_workspace_has_required_controls_and_accessible_dialog(self):
         html = (ROOT / "web" / "image.html").read_text(encoding="utf-8")
         for control in (
+            "projectElementsPanel", "imageProjectSelect", "imageElementCategoryFilter", "imageElementSearch",
+            "imageElementsList", "uploadImageElement", "saveElementCategory", "saveElementName", "saveToElements",
             "referenceFiles", "referenceList", "referenceCount", "fitReferences", "mentionMenu", "mentionList", "prompt",
             "profile", "aspect", "resolution", "steps", "seed", "transparent",
             "generate", "cancel", "stage", "progressBar", "results", "detailsDialog",
@@ -35,6 +37,9 @@ class ImageUiContractTests(unittest.TestCase):
         self.assertIn("QwenStudioSaveImage", script)
         self.assertIn("resolveMentions", script)
         self.assertIn("pollImageProgress", script)
+        self.assertIn("attachProjectElement", script)
+        self.assertIn("saveCurrentImageToElements", script)
+        self.assertIn("roleFromElement", script)
 
 
 if __name__ == "__main__":

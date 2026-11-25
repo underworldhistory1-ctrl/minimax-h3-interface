@@ -611,6 +611,10 @@ def register_lab_routes(app_or_routes, storage_root: str, folder_paths_mod=None,
             pid = body.get("project_id")
             role = body.get("as_role", "reference")
             alias = body.get("alias")
+            category = body.get("category")
+            name = body.get("name")
+            if name is not None and not str(name).strip():
+                name = None
             if output_root is None:
                 return web.json_response({"error": "Canonical image directory is unavailable"}, status=503)
             qwen_path = owned_path(output_root / "images", fname)
@@ -618,8 +622,11 @@ def register_lab_routes(app_or_routes, storage_root: str, folder_paths_mod=None,
                 raise ValueError("Only saved Qwen images may be imported")
             if pid and not projects.get_project(pid):
                 raise ValueError("Project not found")
-            rec = await asyncio.to_thread(projects.import_qwen_image, str(qwen_path), pid, role, alias)
-            return web.json_response({"asset": rec}, status=201)
+            rec = await asyncio.to_thread(projects.import_qwen_image, str(qwen_path), pid, role, alias, category, name)
+            payload = {"asset": rec}
+            if pid:
+                payload["project"] = await asyncio.to_thread(projects.get_project, pid)
+            return web.json_response(payload, status=201)
         except Exception as e:
             return web.json_response({"error": str(e)}, status=400)
 

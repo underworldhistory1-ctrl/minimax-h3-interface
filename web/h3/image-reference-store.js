@@ -21,9 +21,16 @@
       transaction.onabort=transaction.onerror=()=>reject(transaction.error||request.error);
     });
   }
+  function serializeReference(ref){
+    const item={id:ref.id,file:ref.file,name:ref.name,width:ref.width,height:ref.height,role:ref.role||"context",instructions:ref.instructions||""};
+    if(ref.assetId)item.assetId=ref.assetId;
+    if(ref.projectId)item.projectId=ref.projectId;
+    if(ref.elementCategory)item.elementCategory=ref.elementCategory;
+    return item;
+  }
   async function save(references){
-    if(root.H3TabDraftStore)return root.H3TabDraftStore.save('image.references',references.map(ref=>({id:ref.id,file:ref.file,name:ref.name,width:ref.width,height:ref.height,role:ref.role||"context",instructions:ref.instructions||""})));
-    const snapshot=references.map(ref=>({id:ref.id,file:ref.file,name:ref.name,width:ref.width,height:ref.height,role:ref.role||"context",instructions:ref.instructions||""}));
+    const snapshot=references.map(serializeReference);
+    if(root.H3TabDraftStore)return root.H3TabDraftStore.save('image.references',snapshot);
     const db=await open();
     return new Promise((resolve,reject)=>{
       const transaction=db.transaction('draft','readwrite');

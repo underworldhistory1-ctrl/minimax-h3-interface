@@ -91,9 +91,47 @@ const path=require('node:path');
   assert.match(turbo.unet.inputs.unet_name,/turbo_int8/);
   assert.equal(JSON.parse(turbo.save.inputs.metadata_json).steps,8);
   await page.locator('#cancel').click();await page.waitForFunction(()=>!state.busy);
+  // Project Elements integration: browse Characters/Props/Locations, attach with mapped role & @alias, persist across reload, and save back to Elements.
+  const projRes=await fetch(base+'/h3_studio/lab/projects',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'Image Elements Project'})});
+  assert.equal(projRes.status,201);
+  const project=await projRes.json();
+  const elemPngs=await page.evaluate(()=>['#c82828','#28c828','#2828c8'].map(color=>{const c=document.createElement('canvas');c.width=320;c.height=240;const ctx=c.getContext('2d');ctx.fillStyle=color;ctx.fillRect(0,0,320,240);return c.toDataURL('image/png').split(',')[1];}));
+  for(const [idx,[cat,name]] of [['characters','Hero Alice'],['props','Golden Sword'],['locations','Neon Alley']].entries()){
+    const q=new URLSearchParams({filename:name.toLowerCase().replace(/\s+/g,'_')+'.png',project_id:project.project_id,category:cat,name});
+    const up=await fetch(base+'/h3_studio/lab/assets?'+q,{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:Buffer.from(elemPngs[idx],'base64')});
+    assert.equal(up.status,201);
+  }
+  await page.locator('#refreshImageElements').click();
+  await page.waitForFunction(()=>document.querySelectorAll('#imageElementsList .element-card').length===3);
+  await page.locator('#imageElementCategoryFilter').selectOption('props');
+  assert.equal(await page.locator('#imageElementsList .element-card').count(),1);
+  assert.match(await page.locator('#imageElementsList .element-card').first().textContent(),/Golden Sword/);
+  await page.locator('#imageElementCategoryFilter').selectOption('all');
+  // Clear existing refs so we can attach Project Elements cleanly.
+  await page.evaluate(()=>{for(const ref of state.refs)URL.revokeObjectURL(ref.url);state.refs=[];renderRefs();saveDraft();});
+  await page.locator('#imageElementsList .element-card',{hasText:'Hero Alice'}).getByRole('button',{name:'+ Use'}).click();
+  await page.waitForFunction(()=>state.refs.length===1&&state.refs[0].name==='Hero_Alice');
+  assert.equal(await page.evaluate(()=>state.refs[0].role),'identity');
+  await page.locator('#imageElementsList .element-card',{hasText:'Golden Sword'}).getByRole('button',{name:'+ Use'}).click();
+  await page.waitForFunction(()=>state.refs.length===2&&state.refs[1].name==='Golden_Sword');
+  assert.equal(await page.evaluate(()=>state.refs[1].role),'object');
+  assert.ok(await page.evaluate(()=>Boolean(state.refs[0].assetId&&state.refs[1].assetId)));
+  await page.evaluate(()=>QwenTabState.prepareReload());await page.reload();
+  await page.waitForFunction(()=>state.ready&&state.referencesReady&&state.refs.length===2);
+  assert.equal(await page.evaluate(()=>state.refs[1].role),'object');
+  assert.ok(await page.evaluate(()=>Boolean(state.refs[1].assetId&&state.refs[1].elementCategory==='Props')));
+  await page.evaluate(()=>showImage({filename:'qwen_studio_fixture.png',width:1280,height:704}));
+  await page.locator('#saveElementCategory').selectOption('props');
+  await page.locator('#saveElementName').fill('Magic Shield');
+  await page.locator('#saveToElements').click();
+  await page.waitForFunction(()=>document.querySelectorAll('#imageElementsList .element-card').length===4);
+  assert.match(await page.locator('#imageElementsList').textContent(),/Magic Shield/);
+  await page.setViewportSize({width:390,height:900});
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Project Elements UI fits a phone');
+  await page.setViewportSize({width:1440,height:1100});
   assert.deepEqual(errors,[]);
   if(process.env.H3_TEST_IMAGE_SCREENSHOT)await page.screenshot({path:process.env.H3_TEST_IMAGE_SCREENSHOT,fullPage:true});
-  console.log(JSON.stringify({passed:true,checks:['10 distinct uploads connected','roles and task compiled','rename and reorder preserve source identity','roles and instructions survive refresh','negative prompt and cache reach graph','removed native token blocks stale source','result edit and reference loop','official Turbo graph and baseline step preservation through refresh'],errors},null,2));
+  console.log(JSON.stringify({passed:true,checks:['10 distinct uploads connected','roles and task compiled','rename and reorder preserve source identity','roles and instructions survive refresh','negative prompt and cache reach graph','removed native token blocks stale source','result edit and reference loop','official Turbo graph and baseline step preservation through refresh','project elements browse/filter/attach/reload/save-back'],errors},null,2));
  }catch(error){console.error(error.stack);console.error(stderr);if(page)console.error(await page.locator('#error').textContent());process.exitCode=1;}
  finally{if(browser)await browser.close();server.kill();}
 })();

@@ -2,6 +2,7 @@
 const $=id=>document.getElementById(id);
 const state={
   mode:"create",refs:[],profiles:{},nodes:{},availableLoras:[],ready:false,busy:false,
+  projects:[],currentProject:null,activeProjectId:null,projectElementsLoading:false,
   clientId:sessionStorage.getItem('qwen.clientId')||crypto.randomUUID(),socket:null,activePromptId:sessionStorage.getItem("qwen.activePromptId")||null,
   started:0,lastStepAt:0,lastStep:0,stepTotal:0,stepTimes:[],uploaded:[],current:null,results:[],visible:8,timer:null,
   settings:null,abort:null,completing:false,generationEpoch:0,inferenceEnabled:true,standbyReason:null,pendingToken:null,refsSaving:false,refsSaved:false,referencesReady:false
@@ -35,7 +36,7 @@ function setProgress(label,pct,remaining=null,indeterminate=false){
   $("progressFill").style.width=Math.max(0,Math.min(100,pct||0))+"%";$("progressBar").classList.toggle("busy",indeterminate);
   $("remaining").textContent="Time remaining: "+(remaining===null?"—":fmt(remaining));
 }
-function setBusy(value){const changed=state.busy!==value;state.busy=value;$("generate").disabled=value||!state.ready||!state.referencesReady;$("generate").classList.toggle("hidden",value);$("cancel").classList.toggle("hidden",!value);if(changed)renderRefs();document.querySelectorAll(".left input,.left select,.left textarea,#addReferences").forEach(el=>{if(el.id!=="aspect"&&el.id!=="resolution")el.disabled=value;});document.querySelectorAll("#mentionList button,#mentionMenu button,#randomSeed,#editCurrent,#addCurrentReference").forEach(el=>{el.disabled=value;});updateSettings();}
+function setBusy(value){const changed=state.busy!==value;state.busy=value;$("generate").disabled=value||!state.ready||!state.referencesReady;$("generate").classList.toggle("hidden",value);$("cancel").classList.toggle("hidden",!value);if(changed){renderRefs();renderProjectElements();}document.querySelectorAll(".left input,.left select,.left textarea,#addReferences,#refreshImageElements,#uploadImageElement,#imageElementsList button").forEach(el=>{if(el.id!=="aspect"&&el.id!=="resolution")el.disabled=value;});document.querySelectorAll("#mentionList button,#mentionMenu button,#randomSeed,#editCurrent,#addCurrentReference,#saveElementCategory,#saveElementName,#saveToElements").forEach(el=>{el.disabled=value;});updateSettings();}
 function dimensions(){return sizeMap[$("resolution").value][$("aspect").value];}
 function outputDimensions(){
   const first=state.refs[0];if(!first||$("customSize").checked||!first.width||!first.height)return dimensions();
@@ -74,7 +75,7 @@ function updateSettings(){
 let referenceSignature='',referenceWrite=Promise.resolve(),referenceWriteVersion=0;
 function persistReferences(){
   if(!state.referencesReady||state.referencesSessionOnly)return referenceWrite;
-  const signature=JSON.stringify(state.refs.map(ref=>[ref.id,ref.name,ref.width,ref.height,ref.role,ref.instructions]));
+  const signature=JSON.stringify(state.refs.map(ref=>[ref.id,ref.name,ref.width,ref.height,ref.role,ref.instructions,ref.assetId||'',ref.projectId||'',ref.elementCategory||'']));
   if(signature===referenceSignature)return referenceWrite;
   referenceSignature=signature;
   const version=++referenceWriteVersion;
@@ -140,7 +141,7 @@ function renderRefs(){
   H3Drag.destroyTree($("referenceList"));const before=state.refs.slice();
   $("referenceList").replaceChildren();state.refs.forEach((ref,index)=>{
     const row=document.createElement("div");row.className="ref";const image=document.createElement("img");image.src=ref.url;image.alt=`Preview of image ${index+1}`;
-    const text=document.createElement("div");const title=document.createElement("strong");title.textContent=`image${index+1} · ${ref.file.name}`;const meta=document.createElement("small");meta.dataset.referenceCanvas=String(index===0);meta.textContent=fmtBytes(ref.file.size)+(index===0?" · sets canvas size":" · reference");const nameLabel=document.createElement("label");nameLabel.textContent="MENTION NAME";const nameInput=document.createElement("input");nameInput.className="ref-name";nameInput.value=ref.name;nameInput.maxLength=32;nameInput.setAttribute("aria-label",`Mention name for image ${index+1}`);nameInput.onchange=()=>{const next=nameInput.value.trim();if(!validName(next)||state.refs.some(other=>other!==ref&&other.name.toLowerCase()===next.toLowerCase())){showError("Use a unique reference name with letters, numbers, _ or -.");nameInput.value=ref.name;return;}const old=ref.name;ref.name=next;$("prompt").value=QwenReferencePlan.rename($("prompt").value,old,next);for(const item of state.refs){if(item.instructions)item.instructions=QwenReferencePlan.rename(item.instructions,old,next);}showError("");renderMentions();refreshPromptPreview();saveDraft();};nameInput.oninput=()=>{if(validName(nameInput.value.trim())&&!state.refs.some(other=>other!==ref&&other.name.toLowerCase()===nameInput.value.trim().toLowerCase()))nameInput.onchange();};text.append(title,meta,nameLabel,nameInput);
+    const text=document.createElement("div");const title=document.createElement("strong");title.textContent=`image${index+1} · ${ref.file.name}`;const meta=document.createElement("small");meta.dataset.referenceCanvas=String(index===0);meta.textContent=fmtBytes(ref.file.size)+(index===0?" · sets canvas size":" · reference");let elementTag=null;if(ref.assetId){elementTag=document.createElement("small");const badge=document.createElement("span");badge.className="element-badge";badge.textContent=`Element · ${ref.elementCategory||"Project"}`;elementTag.append(badge);}const nameLabel=document.createElement("label");nameLabel.textContent="MENTION NAME";const nameInput=document.createElement("input");nameInput.className="ref-name";nameInput.value=ref.name;nameInput.maxLength=32;nameInput.setAttribute("aria-label",`Mention name for image ${index+1}`);nameInput.onchange=()=>{const next=nameInput.value.trim();if(!validName(next)||state.refs.some(other=>other!==ref&&other.name.toLowerCase()===next.toLowerCase())){showError("Use a unique reference name with letters, numbers, _ or -.");nameInput.value=ref.name;return;}const old=ref.name;ref.name=next;$("prompt").value=QwenReferencePlan.rename($("prompt").value,old,next);for(const item of state.refs){if(item.instructions)item.instructions=QwenReferencePlan.rename(item.instructions,old,next);}showError("");renderMentions();renderProjectElements();refreshPromptPreview();saveDraft();};nameInput.oninput=()=>{if(validName(nameInput.value.trim())&&!state.refs.some(other=>other!==ref&&other.name.toLowerCase()===nameInput.value.trim().toLowerCase()))nameInput.onchange();};text.append(title,meta,...(elementTag?[elementTag]:[]),nameLabel,nameInput);
     const remove=document.createElement("button");remove.className="button alt small";remove.type="button";remove.textContent="Remove";remove.onclick=()=>{if(state.busy)return;const before=state.refs.slice(),after=before.filter(item=>item!==ref);
       const remap=text=>String(text||'').replace(/<image(\d+)>/gi,(whole,n)=>{const item=before[Number(n)-1];return item===ref?'@'+ref.name:item?'<image'+(after.indexOf(item)+1)+'>':whole;});
       $("prompt").value=remap($("prompt").value);for(const item of after)item.instructions=remap(item.instructions);
@@ -166,7 +167,7 @@ function renderRefs(){
     const instructions=document.createElement("textarea");instructions.rows=2;instructions.placeholder="What to take from this image, what to preserve or ignore…";instructions.value=ref.instructions||"";instructions.maxLength=4000;instructions.disabled=state.busy;instructions.setAttribute("aria-label",`Instructions for image ${index+1}`);instructions.oninput=()=>{ref.instructions=instructions.value;saveDraft();refreshPromptPreview();};
     guidance.append(roleLabel,role,instructionLabel,instructions);
     row.append(grip,image,text,remove,aliasRow,order,insert,guidance);$("referenceList").append(row);
-  });renderMentions();updateSettings();refreshPromptPreview();
+  });renderMentions();renderProjectElements();updateSettings();refreshPromptPreview();
   H3Drag.attach($('referenceList'),{selector:'.ref',handle:'.image-reference-handle',locked:()=>state.busy||!state.referencesReady,onCancel:renderRefs,onCommit:()=>{
     if(before.length!==state.refs.length||before.some((ref,index)=>ref!==state.refs[index])){renderRefs();return;}
     commitImageReferenceOrder(H3ReferenceOrder.permutation(before,[...$('referenceList').children].map(n=>Number(n.dataset.referenceIndex))));
@@ -315,7 +316,7 @@ function captureSettings(){
     for(const name of ["ManualSigmas","KSamplerSelect","RandomNoise","CFGGuider","SamplerCustomAdvanced"])if(!state.nodes[name])throw Error("Missing Turbo node: "+name);
     if(cfg!==1||negativePrompt||loraSettings.lora)throw Error("Qwen Turbo requires guidance 1, no negative prompt and no extra LoRA.");
   }
-  return {...loraSettings,cfg,negativePrompt:$("negativePrompt").value.trim(),workflow:$("imageWorkflow").value,cacheDevice:$("cacheDevice").value,cacheDtype:$("cacheDtype").value,referencePlan:state.refs.map(ref=>({name:ref.name,role:ref.role||"context",instructions:ref.instructions||""})),mode,profile,prompt,sourcePrompt,referenceNames:state.refs.map(ref=>ref.name),width,height,steps:profile.startsWith("turbo_")?8:steps,seed,transparent:mode==="create"&&$("transparent").checked,referenceResolution:Number($("referenceResolution").value),customSize:mode==="edit"&&$("customSize").checked};
+  return {...loraSettings,cfg,negativePrompt:$("negativePrompt").value.trim(),workflow:$("imageWorkflow").value,cacheDevice:$("cacheDevice").value,cacheDtype:$("cacheDtype").value,projectId:state.currentProject?.project_id||null,referencePlan:state.refs.map(ref=>({name:ref.name,role:ref.role||"context",instructions:ref.instructions||"",...(ref.assetId?{assetId:ref.assetId}:{}),...(ref.elementCategory?{elementCategory:ref.elementCategory}:{})})),mode,profile,prompt,sourcePrompt,referenceNames:state.refs.map(ref=>ref.name),width,height,steps:profile.startsWith("turbo_")?8:steps,seed,transparent:mode==="create"&&$("transparent").checked,referenceResolution:Number($("referenceResolution").value),customSize:mode==="edit"&&$("customSize").checked};
 }
 async function recoverPendingImage(){
   if(!state.pendingToken)return state.activePromptId;
@@ -470,6 +471,7 @@ if($("sendToH3")) $("sendToH3").onclick = async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         image_filename: state.current.filename,
+        project_id: state.currentProject?.project_id || undefined,
         as_role: role,
         alias: (state.current.filename.replace(/\.[^.]+$/, "")).slice(-8)
       })
@@ -491,6 +493,264 @@ for(const id of [...imageExtraControls,"prompt","aspect","resolution","steps","s
 window.addEventListener("focus",()=>loadLibrary(false));
 state.timer=setInterval(()=>{if(state.busy&&state.started){const elapsed=(Date.now()-state.started)/1000;$("timer").textContent="Elapsed: "+fmt(elapsed);if(!state.lastStepAt){const estimate=estimateSeconds();$("remaining").textContent=estimate===null?'Time remaining: collecting measurements':'Time remaining: '+fmt(Math.max(0,estimate-elapsed));}}},1000);
 async function resume(){if(!state.activePromptId)return;let job={};try{job=JSON.parse(sessionStorage.getItem("qwen.activeJob")||"{}");}catch{}if(job.promptId===state.activePromptId){state.settings=job.settings||null;const observation=job.completionObservation;if(observation?.id===state.activePromptId&&Number.isFinite(observation.elapsed)&&observation.elapsed>=0&&Number.isFinite(observation.modified)){state.completionObservation={...observation,previewShown:false};}state.pendingToken=job.pendingToken||null;state.started=Number(job.started)||Date.now();state.uploaded=Array.isArray(job.uploaded)?job.uploaded:[];state.lastStep=Number(job.lastStep)||0;state.stepTotal=Number(job.stepTotal)||0;state.stepTimes=Array.isArray(job.stepTimes)?job.stepTimes:[];}else{state.started=Date.now();}setBusy(true);setProgress("Restoring active generation",5,null,true);if(state.lastStep&&state.stepTotal)setProgress(`Sampling · ${state.lastStep}/${state.stepTotal}`,12+Math.round(78*state.lastStep/state.stepTotal),null);openSocket();pollQueue();pollHistory(false);}
+function imageLabServerKey(){
+  return sessionStorage.getItem("h3studio.comfyBase")||location.origin;
+}
+function preferredImageProjectId(){
+  const fromUrl=new URLSearchParams(location.search).get("project");
+  if(fromUrl)return fromUrl;
+  return sessionStorage.getItem("qwen.imageProjectId")||sessionStorage.getItem(`h3_lab.${imageLabServerKey()}.active_project_id`)||"";
+}
+function syncImageProjectSelection(projectId){
+  state.activeProjectId=projectId||null;
+  if(projectId){
+    sessionStorage.setItem("qwen.imageProjectId",projectId);
+    sessionStorage.setItem(`h3_lab.${imageLabServerKey()}.active_project_id`,projectId);
+  }else{
+    sessionStorage.removeItem("qwen.imageProjectId");
+  }
+}
+function imageElementCategories(project){
+  const list=Array.isArray(project?.asset_categories)&&project.asset_categories.length?project.asset_categories:[
+    {id:"characters",name:"Characters",role:"character identity"},
+    {id:"locations",name:"Locations",role:"location"},
+    {id:"props",name:"Props",role:"object"},
+    {id:"styles",name:"Style",role:"visual style"},
+    {id:"storyboards",name:"Storyboards",role:"storyboard"},
+    {id:"custom",name:"Custom",role:"custom"}
+  ];
+  return list.filter(cat=>cat&&cat.id!=="audio"&&cat.role!=="voice");
+}
+function populateImageElementCategories(project){
+  const categories=imageElementCategories(project);
+  const filter=$("imageElementCategoryFilter");
+  if(filter){
+    const current=filter.value||"all";
+    filter.replaceChildren();
+    const allOpt=document.createElement("option");allOpt.value="all";allOpt.textContent="All categories";filter.append(allOpt);
+    for(const cat of categories){const opt=document.createElement("option");opt.value=cat.id;opt.textContent=cat.name;filter.append(opt);}
+    filter.value=[...filter.options].some(o=>o.value===current)?current:"all";
+  }
+  const saveCat=$("saveElementCategory");
+  if(saveCat){
+    const current=saveCat.value||"props";
+    saveCat.replaceChildren();
+    for(const cat of categories){const opt=document.createElement("option");opt.value=cat.id;opt.textContent=cat.name;saveCat.append(opt);}
+    saveCat.value=[...saveCat.options].some(o=>o.value===current)?current:(categories[0]?.id||"custom");
+  }
+}
+function renderProjectElements(){
+  const list=$("imageElementsList"),status=$("imageElementsStatus"),count=$("imageElementsCount");
+  if(!list||!status||!count)return;
+  list.replaceChildren();
+  const project=state.currentProject;
+  if(!project){
+    count.textContent=state.projects.length?"Select project":"Optional";
+    status.textContent=state.projects.length?"Choose a project to browse its Characters, Props, Locations and other Elements.":"No project yet. Upload an element or save a generated image to create one.";
+    return;
+  }
+  const categories=imageElementCategories(project);
+  const categoryName=id=>categories.find(c=>c.id===id)?.name||(project.asset_categories||[]).find(c=>c.id===id)?.name||"Custom";
+  const allImages=(project.assets||[]).filter(asset=>asset&&asset.asset_id&&asset.kind==="image"&&!asset.catalog_hidden);
+  const selectedCat=$("imageElementCategoryFilter")?.value||"all";
+  const query=($("imageElementSearch")?.value||"").trim().toLowerCase();
+  const filtered=allImages.filter(asset=>{
+    if(selectedCat!=="all"&&(asset.category||"custom")!==selectedCat)return false;
+    if(!query)return true;
+    const hay=[asset.name,asset.alias,asset.notes,categoryName(asset.category)].filter(Boolean).join(" ").toLowerCase();
+    return hay.includes(query);
+  });
+  count.textContent=`${allImages.length} element${allImages.length===1?"":"s"}`;
+  if(!allImages.length){
+    status.textContent="This project has no image elements yet. Upload one here or save a generated image to Elements.";
+    return;
+  }
+  if(!filtered.length){
+    status.textContent="No elements match the selected category or search.";
+    return;
+  }
+  status.textContent=`${filtered.length} of ${allImages.length} shown · click + Use to attach with mapped role and @mention`;
+  for(const asset of filtered){
+    const card=document.createElement("div");
+    const attached=state.refs.find(ref=>ref.assetId===asset.asset_id);
+    card.className="element-card"+(attached?" attached":"");
+    card.dataset.assetId=asset.asset_id;
+    const thumb=document.createElement("img");
+    thumb.src=api(`/h3_studio/lab/assets/${encodeURIComponent(asset.asset_id)}/thumbnail`);
+    thumb.loading="lazy";
+    thumb.alt=asset.name||asset.alias||"Project element";
+    thumb.onerror=()=>{if(!thumb.dataset.fallback){thumb.dataset.fallback="1";thumb.src=api(`/h3_studio/lab/assets/${encodeURIComponent(asset.asset_id)}/file`);}};
+    const meta=document.createElement("div");meta.className="element-meta";
+    const title=document.createElement("strong");title.textContent=asset.name||asset.alias||"Element";
+    const sub=document.createElement("small");
+    const badge=document.createElement("span");badge.className="element-badge";badge.textContent=categoryName(asset.category);
+    const mappedRole=QwenReferencePlan.roleFromElement(asset,project.asset_categories||[]);
+    const mentionLabel=attached?`@${attached.name}`:`@${QwenReferencePlan.elementAlias(asset,[])}`;
+    sub.append(badge,document.createTextNode(`${mentionLabel} · ${QwenReferencePlan.roles[mappedRole]||mappedRole}`));
+    meta.append(title,sub);
+    const btn=document.createElement("button");btn.type="button";btn.className="button alt small";
+    btn.disabled=state.busy||!state.referencesReady;
+    if(attached){
+      btn.textContent=`Insert @${attached.name}`;
+      btn.title=`Already attached as @${attached.name}. Click to insert into prompt.`;
+      btn.onclick=()=>{insertMention(attached.name);$("prompt").scrollIntoView({behavior:"smooth",block:"center"});};
+    }else{
+      btn.textContent="+ Use";
+      btn.title=`Attach ${asset.name||asset.alias} as Qwen reference (${QwenReferencePlan.roles[mappedRole]||mappedRole})`;
+      btn.onclick=()=>void attachProjectElement(asset,btn);
+    }
+    card.append(thumb,meta,btn);
+    list.append(card);
+  }
+}
+async function attachProjectElement(asset,triggerButton=null){
+  if(state.busy||!state.referencesReady||!asset?.asset_id)return;
+  const existing=state.refs.find(ref=>ref.assetId===asset.asset_id);
+  if(existing){insertMention(existing.name);return;}
+  if(state.refs.length>=10){showError("Qwen Image supports up to 10 images. Remove a reference before adding this element.");return;}
+  if(triggerButton){triggerButton.disabled=true;triggerButton.textContent="Adding…";}
+  const epoch=state.generationEpoch;
+  try{
+    const response=await fetch(api(`/h3_studio/lab/assets/${encodeURIComponent(asset.asset_id)}/file`),{signal:AbortSignal.timeout(45000)});
+    if(!response.ok)throw Error(`Could not load project element (HTTP ${response.status}).`);
+    const blob=await response.blob();
+    if(!blob.size||blob.size>25*1024*1024)throw Error("Project element image must be non-empty and under 25 MB.");
+    const ext=(asset.server_path||"").match(/\.(png|jpe?g|webp)$/i)?.[0]||".png";
+    const rawName=(asset.name||asset.alias||"element").replace(/[\\/:*?"<>|]+/g,"_");
+    const filename=/\.(png|jpe?g|webp)$/i.test(rawName)?rawName:rawName+ext;
+    const mime=blob.type&&blob.type.startsWith("image/")?blob.type:(ext.toLowerCase()===".webp"?"image/webp":/\.jpe?g$/i.test(ext)?"image/jpeg":"image/png");
+    const file=new File([blob],filename,{type:mime});
+    let width=0,height=0;
+    try{const bitmap=await createImageBitmap(file);width=bitmap.width;height=bitmap.height;bitmap.close();}catch{}
+    if(state.busy||epoch!==state.generationEpoch||!state.referencesReady)return;
+    if(state.refs.some(ref=>ref.assetId===asset.asset_id))return;
+    if(state.refs.length>=10)throw Error("Qwen Image supports up to 10 images. Remove a reference before adding this element.");
+    const categories=state.currentProject?.asset_categories||[];
+    const role=QwenReferencePlan.roleFromElement(asset,categories);
+    const alias=QwenReferencePlan.elementAlias(asset,state.refs.map(ref=>ref.name));
+    const categoryName=categories.find(c=>c.id===asset.category)?.name||"Custom";
+    state.refs.push({
+      id:crypto.randomUUID(),file,url:URL.createObjectURL(file),name:alias,role,
+      instructions:String(asset.notes||"").trim(),width,height,
+      assetId:asset.asset_id,projectId:state.currentProject?.project_id||null,elementCategory:categoryName
+    });
+    renderRefs();saveDraft();showError("");
+  }catch(error){
+    showError(error.message||"Could not attach project element.");
+    renderProjectElements();
+  }
+}
+async function loadImageProject(projectId){
+  if(!projectId){state.currentProject=null;syncImageProjectSelection(null);populateImageElementCategories(null);renderProjectElements();return null;}
+  state.projectElementsLoading=true;
+  if($("imageElementsStatus"))$("imageElementsStatus").textContent="Loading project elements…";
+  try{
+    const res=await fetch(api(`/h3_studio/lab/projects/${encodeURIComponent(projectId)}`),{cache:"no-store",signal:AbortSignal.timeout(15000)});
+    if(!res.ok)throw Error(`HTTP ${res.status}`);
+    const project=await H3RenderValues.readJson(res);
+    state.currentProject=project;
+    syncImageProjectSelection(project.project_id);
+    if($("imageProjectSelect"))$("imageProjectSelect").value=project.project_id;
+    populateImageElementCategories(project);
+    renderProjectElements();
+    return project;
+  }catch(error){
+    state.currentProject=null;
+    populateImageElementCategories(null);
+    renderProjectElements();
+    if($("imageElementsStatus"))$("imageElementsStatus").textContent="Could not load project elements: "+error.message;
+    return null;
+  }finally{state.projectElementsLoading=false;}
+}
+async function loadImageProjects(force=false){
+  const select=$("imageProjectSelect");
+  if(!select)return;
+  try{
+    const res=await fetch(api("/h3_studio/lab/projects"),{cache:"no-store",signal:AbortSignal.timeout(15000)});
+    if(!res.ok)throw Error(`HTTP ${res.status}`);
+    const data=await H3RenderValues.readJson(res);
+    state.projects=Array.isArray(data.projects)?data.projects:[];
+    const desired=state.activeProjectId||preferredImageProjectId();
+    select.replaceChildren();
+    const empty=document.createElement("option");empty.value="";empty.textContent=state.projects.length?"Choose project…":"No projects yet";select.append(empty);
+    for(const proj of state.projects){
+      const opt=document.createElement("option");opt.value=proj.project_id;
+      opt.textContent=`${proj.name} (${proj.asset_count||0})`;
+      select.append(opt);
+    }
+    const targetId=state.projects.some(p=>p.project_id===desired)?desired:(state.projects[0]?.project_id||"");
+    select.value=targetId;
+    if(targetId)await loadImageProject(targetId);
+    else{state.currentProject=null;populateImageElementCategories(null);renderProjectElements();}
+  }catch(error){
+    if(force&&$("imageElementsStatus"))$("imageElementsStatus").textContent="Project Elements unavailable: "+error.message;
+    else renderProjectElements();
+  }
+}
+async function ensureImageElementsProject(){
+  if(state.currentProject?.project_id)return state.currentProject;
+  const res=await fetch(api("/h3_studio/lab/projects"),{
+    method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({name:"Image Elements",request_id:crypto.randomUUID()})
+  });
+  if(!res.ok)throw Error("Could not create a project for Elements.");
+  const created=await H3RenderValues.readJson(res);
+  syncImageProjectSelection(created.project_id);
+  await loadImageProjects(false);
+  return state.currentProject||created;
+}
+async function uploadFilesToElements(files){
+  if(state.busy||!files?.length)return;
+  try{
+    const project=await ensureImageElementsProject();
+    const filterVal=$("imageElementCategoryFilter")?.value||"all";
+    const category=filterVal!=="all"?filterVal:"custom";
+    for(const file of files){
+      if(!/\.(png|jpe?g|webp)$/i.test(file.name)||!file.size||file.size>25*1024*1024){
+        showError("Use non-empty PNG, JPG or WebP images under 25 MB.");continue;
+      }
+      const existingNames=(state.currentProject?.assets||[]).filter(a=>!a.catalog_hidden).map(a=>a.name||a.alias);
+      const uniqueName=QwenReferencePlan.elementAlias({name:file.name},existingNames);
+      const query=new URLSearchParams({filename:file.name,project_id:project.project_id,category,name:uniqueName});
+      const res=await fetch(api("/h3_studio/lab/assets?"+query),{method:"POST",body:file,headers:{"Content-Type":"application/octet-stream"}});
+      if(!res.ok){let msg=`HTTP ${res.status}`;try{msg=(await res.json()).error||msg;}catch{}throw Error(msg);}
+      await loadImageProject(project.project_id);
+    }
+    showError("");
+  }catch(error){showError("Element upload failed: "+error.message);}
+}
+async function saveCurrentImageToElements(){
+  if(state.busy||!state.current)return;
+  const btn=$("saveToElements");
+  if(btn){btn.disabled=true;btn.textContent="Saving…";}
+  try{
+    const project=await ensureImageElementsProject();
+    const category=$("saveElementCategory")?.value||"custom";
+    const typed=($("saveElementName")?.value||"").trim();
+    const existingNames=(project.assets||[]).filter(a=>!a.catalog_hidden).map(a=>a.name||a.alias);
+    const name=typed||QwenReferencePlan.elementAlias({name:state.current.filename.replace(/^qwen_studio_/,"qwen_")},existingNames);
+    const res=await fetch(api("/h3_studio/lab/import_qwen_image"),{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({image_filename:state.current.filename,project_id:project.project_id,as_role:"reference",category,name})
+    });
+    if(!res.ok){let msg=`HTTP ${res.status}`;try{msg=(await res.json()).error||msg;}catch{}throw Error(msg);}
+    const data=await H3RenderValues.readJson(res);
+    if(data.project){state.currentProject=data.project;populateImageElementCategories(data.project);renderProjectElements();}
+    else await loadImageProject(project.project_id);
+    if($("saveElementName"))$("saveElementName").value="";
+    if($("imageElementsStatus"))$("imageElementsStatus").textContent=`Saved "${name}" to Project Elements.`;
+    showError("");
+  }catch(error){showError("Save to Elements failed: "+error.message);}
+  finally{if(btn){btn.disabled=state.busy;btn.textContent="Save to Elements";}}
+}
+if($("imageProjectSelect"))$("imageProjectSelect").onchange=()=>void loadImageProject($("imageProjectSelect").value);
+if($("refreshImageElements"))$("refreshImageElements").onclick=()=>void loadImageProjects(true);
+if($("imageElementCategoryFilter"))$("imageElementCategoryFilter").onchange=renderProjectElements;
+if($("imageElementSearch"))$("imageElementSearch").oninput=renderProjectElements;
+if($("uploadImageElement"))$("uploadImageElement").onclick=()=>{if(!state.busy)$("uploadImageElementFile").click();};
+if($("uploadImageElementFile"))$("uploadImageElementFile").onchange=async()=>{const files=[...$("uploadImageElementFile").files];$("uploadImageElementFile").value="";await uploadFilesToElements(files);};
+if($("saveToElements"))$("saveToElements").onclick=()=>void saveCurrentImageToElements();
+
 async function initialize(){
   restoreDraft();
   $("addReferences").disabled=true;
@@ -505,7 +765,7 @@ async function initialize(){
     state.refsSaved=true;
     state.referencesReady=true;
     $("addReferences").disabled=false;
-    referenceSignature=JSON.stringify(state.refs.map(ref=>[ref.id,ref.name,ref.width,ref.height,ref.role,ref.instructions]));
+    referenceSignature=JSON.stringify(state.refs.map(ref=>[ref.id,ref.name,ref.width,ref.height,ref.role,ref.instructions,ref.assetId||'',ref.projectId||'',ref.elementCategory||'']));
   }catch(error){
     showError('Saved references could not be restored. Reload to retry, or continue for this session: '+error.message);
     const continueButton=document.createElement('button');continueButton.type='button';continueButton.className='button alt small';
@@ -513,7 +773,7 @@ async function initialize(){
     continueButton.onclick=()=>{state.referencesReady=true;state.referencesSessionOnly=true;$("addReferences").disabled=false;showError('References are available for this session only. Reload to retry browser storage.');updateSettings();setBusy(state.busy);};
     $("error").append(continueButton);
   }
-  renderRefs();updateSettings();loadLibrary(false);await checkConnection();await resume();
+  renderRefs();updateSettings();loadLibrary(false);void loadImageProjects(false);await checkConnection();await resume();
 }
 void initialize();
 
@@ -532,6 +792,6 @@ addEventListener('beforeunload',event=>{saveDraft();if(state.refsSaving){event.p
 
 setInterval(()=>{
  if(!state.referencesReady||state.referencesSessionOnly||state.refsSaving||!state.refs.length)return;
- const snapshot=state.refs.map(ref=>({id:ref.id,file:ref.file,name:ref.name,width:ref.width,height:ref.height,role:ref.role||"context",instructions:ref.instructions||""}));
+ const snapshot=state.refs.map(ref=>({id:ref.id,file:ref.file,name:ref.name,width:ref.width,height:ref.height,role:ref.role||"context",instructions:ref.instructions||"",...(ref.assetId?{assetId:ref.assetId}:{}),...(ref.projectId?{projectId:ref.projectId}:{}),...(ref.elementCategory?{elementCategory:ref.elementCategory}:{})}));
  referenceWrite=referenceWrite.then(()=>QwenReferenceStore.save(snapshot)).catch(error=>{showError('Saved reference storage needs attention: '+error.message);});
 },60000);

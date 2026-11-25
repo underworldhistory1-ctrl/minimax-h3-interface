@@ -54,7 +54,7 @@ class SourcePreparationTests(unittest.TestCase):
                 '-itsoffset','2','-f','lavfi','-i','sine=frequency=440:sample_rate=48000:duration=2',
                 '-c:v','libx264','-threads','1','-c:a','aac',str(source)],check=True,capture_output=True,timeout=30)
             prepare_video_source(source,target,256,256,3)
-            raw=subprocess.check_output([get_ffmpeg_path(),'-v','error','-i',str(target),'-map','0:a:0','-ac','1','-ar','48000','-f','f32le','pipe:1'])
+            raw=subprocess.check_output([get_ffmpeg_path(),'-nostdin','-v','error','-i',str(target),'-map','0:a:0','-ac','1','-ar','48000','-f','f32le','pipe:1'],timeout=30)
             samples=array.array('f');samples.frombytes(raw)
             self.assertLess(max(abs(x) for x in samples[:24000]),0.001)
             self.assertGreater(max(abs(x) for x in samples[72000:96000]),0.01)

@@ -55,5 +55,42 @@
   function rename(text,before,after){
     return String(text||'').replace(/(^|[^\p{L}\p{N}_])@([\p{L}\p{N}_-]+)/gu,(full,prefix,name)=>name.toLowerCase()===before.toLowerCase()?`${prefix}@${after}`:full);
   }
-  return {roles,workflows,compile,rename};
+  const elementRoleMap={
+    'character identity':'identity',characters:'identity',character:'identity',identity:'identity',person:'identity',actor:'identity',
+    object:'object',objects:'object',props:'object',prop:'object',product:'object',item:'object',
+    location:'background',locations:'background',background:'background',backgrounds:'background',environment:'background',setting:'background',
+    'visual style':'style',styles:'style',style:'style',lighting:'style',look:'style',
+    storyboard:'composition',storyboards:'composition',composition:'composition',layout:'composition',
+    pose:'pose',poses:'pose',expression:'pose',
+    outfit:'outfit',wardrobe:'outfit',clothing:'outfit',costume:'outfit',
+    text:'text',typography:'text',logo:'text',
+    mask:'mask',
+    custom:'custom',
+    context:'context'
+  };
+  function roleFromElement(element,categories=[]){
+    if(!element||typeof element!=='object')return 'context';
+    const matched=Array.isArray(categories)?categories.find(c=>c&&c.id===element.category):null;
+    const candidates=[element.role,matched?.role,element.category,matched?.id,matched?.name];
+    for(const raw of candidates){
+      const key=String(raw||'').trim().toLowerCase();
+      if(!key)continue;
+      if(Object.hasOwn(elementRoleMap,key))return elementRoleMap[key];
+      if(Object.hasOwn(roles,key))return key;
+    }
+    return 'context';
+  }
+  function elementAlias(element,existingNames=[]){
+    const raw=String(element?.name||element?.alias||element?.original_name||'element').trim()
+      .replace(/\.(?:png|jpe?g|webp|gif|bmp)$/i,'');
+    const base=raw.replace(/[^\p{L}\p{N}_-]+/gu,'_').replace(/^_+|_+$/g,'').slice(0,32)||'element';
+    const used=new Set((existingNames||[]).map(n=>String(n||'').toLowerCase()));
+    let candidate=base,index=2;
+    while(used.has(candidate.toLowerCase())){
+      const suffix='_'+index++;
+      candidate=base.slice(0,Math.max(1,32-suffix.length))+suffix;
+    }
+    return candidate;
+  }
+  return {roles,workflows,compile,rename,roleFromElement,elementAlias};
 });
