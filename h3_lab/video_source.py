@@ -58,21 +58,36 @@ def prepare_video_source(source, destination, width, height, keep_seconds=5, fit
         raise ValueError("Source must provide at least 40 frames at 24 fps (1.67 seconds)")
     use_duration = frames / 24
     start = max(0, duration - use_duration)
-    has_audio = any(s.get("codec_type") == "audio" for s in info["streams"])
+    audio_stream = next((s for s in info["streams"] if s.get("codec_type") == "audio"), None)
+    has_audio = audio_stream is not None
+    video_start = float(video.get("start_time") or 0.0)
+    if not math.isfinite(video_start):
+        video_start = 0.0
+    audio_start = float((audio_stream or {}).get("start_time") or 0.0) if has_audio else 0.0
+    if not math.isfinite(audio_start):
+        audio_start = 0.0
+    window_start = video_start + start
+    opening_gap = max(0.0, audio_start - window_start) if has_audio else 0.0
+    audio_in_window = has_audio and opening_gap < use_duration
     sizing = (f"crop='trunc(min(iw,ih*{width}/{height})/2)*2':'trunc(min(ih,iw*{height}/{width})/2)*2',scale={width}:{height}"
               if fit == "crop" else f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black")
     target = pathlib.Path(destination)
     target.parent.mkdir(parents=True, exist_ok=True)
     command = [get_ffmpeg_path(), "-nostdin", "-v", "error", "-y", "-threads", "1",
         "-protocol_whitelist", "file,pipe", "-an", "-ss", str(start), "-i", str(source)]
-    if has_audio:
-        command += ["-protocol_whitelist", "file,pipe", "-vn", "-ss", str(start), "-i", str(source)]
+    if audio_in_window:
+        command += ["-protocol_whitelist", "file,pipe", "-vn"]
+        if window_start > audio_start:
+            command += ["-ss", str(window_start)]
+        command += ["-i", str(source)]
     else:
         command += ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"]
-    # Separate video/audio demuxer inputs with one bounded graph avoid FFmpeg 8/9
-    # stalling when the source audio starts after the first picture.
+    # Separate video/audio demuxers + deterministic adelay/apad avoid FFmpeg 8/9.1
+    # delayed-audio stalls while preserving exact frame count and opening silence.
     video_filter = f"fps=24,{sizing},setsar=1,tpad=stop_mode=clone:stop_duration=0.1"
-    audio_filter = f"aresample=48000:async=1:first_pts=0,apad=whole_dur={use_duration},atrim=duration={use_duration}"
+    delay_ms = round(opening_gap * 1000) if audio_in_window and opening_gap > 0.001 else 0
+    delay_part = f",adelay={delay_ms}:all=1" if delay_ms > 0 else ""
+    audio_filter = f"aresample=48000,asetpts=PTS-STARTPTS{delay_part},apad=whole_dur={use_duration},atrim=duration={use_duration}"
     command += ["-filter_complex_threads", "1", "-filter_complex",
         f"[0:v:0]{video_filter}[h3v];[1:a:0]{audio_filter}[h3a]",
         "-map", "[h3v]", "-map", "[h3a]",
