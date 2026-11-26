@@ -439,6 +439,23 @@ function renderEstimates() {
   const risk=refMemoryRisk();
   $("memoryNotice").classList.toggle("hidden",!risk);
   $("memoryNotice").textContent=risk?`This server has ${state.ramLimit} GB system RAM. Long Ref2VA renders at this canvas may run out of system RAM during video decoding. You can still render; a shorter duration, smaller canvas, or 64 GB RAM server lowers that risk.`:"";
+  let contLock=$("continuationCanvasNotice");
+  if(!contLock&&typeof document.createElement==="function"&&typeof wrap?.before==="function"){
+    contLock=document.createElement("div");contLock.id="continuationCanvasNotice";contLock.className="lora-recommendation";contLock.setAttribute("role","status");
+    wrap.before(contLock);
+  }
+  if(contLock){
+    contLock.hidden=!state.continuation;
+    if(state.continuation&&typeof contLock.replaceChildren==="function"){
+      contLock.replaceChildren();
+      const title=document.createElement("strong");title.textContent="Canvas locked by active continuation ("+(state.continuation.source_name||"source video")+" · "+state.width+"×"+state.height+")";
+      const note=document.createTextNode("Format and resolution are locked to match the continuation video. Clear continuation to change size or use Pika/Frames.");
+      const clearBtn=document.createElement("button");clearBtn.type="button";clearBtn.className="button alt smallbtn";clearBtn.style.marginTop="6px";clearBtn.textContent="Clear continuation & unlock";
+      clearBtn.disabled=!!(state.busy||state.projectLoading);
+      clearBtn.onclick=()=>{if($("clearContinuation"))$("clearContinuation").click();};
+      contLock.append(title,note,document.createElement("br"),clearBtn);
+    }
+  }
 }
 function applyAdapterSelection(item,enabled){
   const before={...selectionSpec(),loras:state.loras.map(l=>({...l}))};
