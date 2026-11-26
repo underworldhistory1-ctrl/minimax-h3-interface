@@ -51,6 +51,15 @@
   .right{padding-bottom:18px}
 }
 .brand{border:0;padding:0;background:none;color:inherit;font:inherit}.brand:focus-visible{outline:2px solid var(--acid);outline-offset:6px;border-radius:8px}
+.cont-dropzone{display:block;width:100%;padding:10px 11px;border:1px dashed #596444;border-radius:8px;background:#1f2419;color:#d2dfb9;text-align:center;font-size:12px;font-weight:700;cursor:pointer;transition:border-color .15s,background .15s}
+.cont-dropzone small{display:block;font-size:10px;font-weight:400;color:var(--muted);margin-top:2px}
+.cont-dropzone:hover,.cont-dropzone.dragging{border-color:var(--acid);background:#2a331d}
+.cont-dropzone:disabled{opacity:.5;cursor:not-allowed}
+.cont-upload-bar{display:flex;align-items:center;gap:8px;margin-top:8px}
+.cont-upload-bar .progress{flex:1;margin:0}
+.cont-compact-grid{display:grid;grid-template-columns:68px minmax(0,1fr) minmax(0,1fr);gap:6px;margin-top:8px}
+.cont-compact-grid label{margin:0 0 3px;font-size:10px}
+.cont-compact-grid input,.cont-compact-grid select{padding:6px 7px;font-size:11px}
 </style>
 <link rel="stylesheet" href="./reference-controls.css?v=20261104-interface-2.11.0">
 <link rel="stylesheet" href="./studio-ux.css?v=20261115-interface-2.17.3">
@@ -106,13 +115,19 @@
     <button type="button" class="mode" data-mode="refs" role="tab" aria-selected="false"><strong>References</strong><span>Image / video / audio</span></button>
    </div>
    <details class="panel" id="sourcePanel"><summary style="cursor:pointer;font-weight:700;margin-bottom:8px">Continue a video · upload a source</summary>
-    <h2>Continue a video</h2><p data-guidance-key="videoHelp5" lang="en" dir="ltr">Choose the video to extend here. Uploading a video in References supplies guidance; it does not select a continuation source.</p>
-    <label for="sourceTailSeconds">USE THE LAST (SECONDS)</label><input id="sourceTailSeconds" type="number" min="2" max="15.1" step="0.1" value="5">
-    <label for="sourceFit">FIT SOURCE TO SELECTED OUTPUT CANVAS</label><select id="sourceFit"><option value="crop">Crop · preserve proportions</option><option value="contain">Contain · black borders</option></select>
-    <label for="sourceMode">CONTINUATION INPUTS</label><select id="sourceMode"><option value="refs">Prompt + references / storyboard</option><option value="text">Prompt + timed keyframes</option></select>
-    <button id="uploadContinuation" class="button alt smallbtn">Upload video to extend</button><input id="continuationFile" type="file" accept=".mp4,.mov,.webm,.mkv,.avi" hidden>
-    <div id="sourceUploadStatus" class="tip" role="status">MP4/MOV/WebM/MKV/AVI · up to 500 MB / 8.8 megapixels. The selected tail is fitted to the output canvas and converted to 24 fps; the full upload is not kept. The protected context uses its last 1.625 s.</div>
-    <div class="tip" data-guidance-key="videoHelp6" lang="en" dir="ltr">To extend an existing project result, use Extend clip on that result below. Storyboard = shot plan in References; keyframe = one image at a chosen time.</div>
+    <button id="uploadContinuation" type="button" class="cont-dropzone">Drop video to extend · or click to browse<small>MP4 / MOV / WebM / MKV · uses last 1.625s context</small></button>
+    <input id="continuationFile" type="file" accept=".mp4,.mov,.webm,.mkv,.avi" hidden>
+    <div id="sourceUploadBar" class="cont-upload-bar" hidden>
+     <div class="progress" id="sourceUploadProgress"><i id="sourceUploadProgressFill"></i></div>
+     <button id="cancelContinuationUpload" type="button" class="button alt smallbtn danger">Cancel</button>
+    </div>
+    <div id="sourceUploadStatus" class="tip" role="status" aria-live="polite">Drop a clip above, or use Extend clip on any generated video.</div>
+    <div class="cont-compact-grid">
+     <div><label for="sourceTailSeconds">TAIL (S)</label><input id="sourceTailSeconds" type="number" min="2" max="15.1" step="0.1" value="5" title="Seconds kept from the end of the source video (last 1.625s is protected context)"></div>
+     <div><label for="sourceFit">FIT</label><select id="sourceFit"><option value="crop">Crop</option><option value="contain">Contain</option></select></div>
+     <div><label for="sourceMode">INPUTS</label><select id="sourceMode"><option value="refs">References</option><option value="text">Text / keys</option></select></div>
+    </div>
+    <details class="tip" style="margin-top:6px"><summary style="cursor:pointer">Notes</summary><p data-guidance-key="videoHelp5" lang="en" dir="ltr" style="margin:4px 0">Choose the video to extend here. Uploading a video in References supplies guidance; it does not select a continuation source.</p><div data-guidance-key="videoHelp6" lang="en" dir="ltr">To extend an existing project result, use Extend clip on that result below. Storyboard = shot plan in References; keyframe = one image at a chosen time.</div></details>
    </details>
    <section class="panel" id="framesSection" hidden><div class="workflow-help" data-guidance-key="frames" lang="en" dir="ltr">These are the opening and closing images of the video. Upload either or both; H3 generates the motion between them. Use References for images defining a character or location.</div>
     <h2>Start &amp; end frames</h2><p data-guidance-key="videoHelp7" lang="en" dir="ltr">Set the exact first frame, last frame, or both. The first image should match the canvas aspect ratio.</p>
@@ -219,7 +234,7 @@
 <script src="./h3/scenes-ui.js?v=20261103-interface-2.9.0"></script>
 <script src="./h3/project-controller.js?v=20261103-interface-2.9.0"></script>
 <script src="./h3/project-settings.js?v=20261104-interface-2.15.0"></script>
-<script src="./lab-ui.js?v=20261126-draft-clone-fix"></script>
+<script src="./lab-ui.js?v=20261126-cont-upload-ux"></script>
 <script src="./h3/vendor/sortable.min.js?v=1.15.7"></script>
 <script src="./h3/drag-sort.js?v=20261104-interface-2.13.0"></script>
 <script src="./h3/reference-order.js?v=20261104-interface-2.13.0"></script>

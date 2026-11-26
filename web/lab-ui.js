@@ -99,15 +99,64 @@ function setContinuationMode(mode){
   if(window.H3ConfigurationUI)H3ConfigurationUI.refresh();
 }
 
+let activeContinuationXhr=null;
+function setContinuationUploadUI({visible=false,pct=0,busy=false,text=null,tone='tip'}={}){
+  const bar=$("sourceUploadBar"),prog=$("sourceUploadProgress"),fill=$("sourceUploadProgressFill"),cancel=$("cancelContinuationUpload"),status=$("sourceUploadStatus");
+  if(bar)bar.hidden=!visible;
+  if(prog)prog.classList.toggle("busy",!!busy);
+  if(fill)fill.style.width=Math.max(0,Math.min(100,pct))+"%";
+  if(cancel)cancel.disabled=!visible;
+  if(status&&text!==null){status.textContent=text;status.className=tone==='ok'?'notice':tone==='error'?'tip error':'tip';}
+}
+function uploadContinuationWithProgress(url,body,onProgress,onUploaded){
+  return new Promise((resolve,reject)=>{
+    const xhr=new XMLHttpRequest();
+    activeContinuationXhr=xhr;
+    xhr.open("POST",url,true);
+    xhr.timeout=10*60*1000;
+    xhr.upload.onprogress=e=>{if(e.lengthComputable&&onProgress)onProgress(e.loaded,e.total);};
+    xhr.upload.onload=()=>{if(onUploaded)onUploaded();};
+    xhr.onabort=()=>{const err=Error("Continuation upload cancelled.");err.cancelled=true;reject(err);};
+    xhr.ontimeout=()=>reject(Error("Continuation upload timed out."));
+    xhr.onerror=()=>reject(Error("Network error while uploading continuation video."));
+    xhr.onload=()=>{
+      let data={};
+      try{data=JSON.parse(xhr.responseText||"{}");}catch{}
+      if(xhr.status>=200&&xhr.status<300)resolve(data);
+      else{const err=Error(data.error||data.message||"HTTP "+xhr.status);err.status=xhr.status;reject(err);}
+    };
+    xhr.send(body);
+  });
+}
 async function startUploadedContinuation(file){
+  if(!file)return;
+  if(!/\.(mp4|mov|webm|mkv|avi)$/i.test(file.name||"")&&!(file.type||"").startsWith("video/"))throw Error("Choose a video file (MP4, MOV, WebM, MKV, or AVI).");
   if(file.size>500*1024*1024)throw Error("Continuation source exceeds 500 MB.");
+  const formatBytes=typeof fmtBytes==="function"?fmtBytes:(n=>n>=1048576?(n/1048576).toFixed(1)+" MB":Math.round(n/1024)+" KB");
   await withProjectLoading(async()=>{
+    if(!projectCtrl?.currentProject&&typeof ensureWorkingProject==="function")await ensureWorkingProject();
     if(!projectCtrl?.currentProject)throw Error("Open a project first.");
     const query=new URLSearchParams({project_id:state.activeProjectId,width:state.width,height:state.height,
       keep_seconds:$("sourceTailSeconds").value,fit:$("sourceFit").value});
-    $("sourceUploadStatus").textContent="Uploading and preparing a private 24 fps source…";
+    setContinuationUploadUI({visible:true,pct:0,busy:false,text:`Uploading ${file.name} · 0 / ${formatBytes(file.size)} (0%)`});
     const body=new FormData();body.append("file",file);
-    const result=await projectCtrl.fetchJson("/h3_studio/lab/media/upload_continuation?"+query,{method:"POST",body});
+    let result;
+    try{
+      result=await uploadContinuationWithProgress(
+        projectCtrl.apiUrl("/h3_studio/lab/media/upload_continuation?"+query),
+        body,
+        (loaded,total)=>{
+          const pct=Math.min(99,Math.floor(100*loaded/Math.max(total,1)));
+          setContinuationUploadUI({visible:true,pct,busy:false,text:`Uploading ${file.name} · ${formatBytes(loaded)} / ${formatBytes(total)} (${pct}%)`});
+        },
+        ()=>{
+          setContinuationUploadUI({visible:true,pct:100,busy:true,text:`Uploaded ${formatBytes(file.size)} · preparing 24 fps continuation on server…`});
+        }
+      );
+    }finally{
+      activeContinuationXhr=null;
+      setContinuationUploadUI({visible:false,pct:0,busy:false});
+    }
     const project=await projectCtrl.loadProject(state.activeProjectId);
     const m=result.metadata;
     state.continuation={type:"imported",source_take_id:result.take.take_id,source_asset_id:result.asset.asset_id,
@@ -117,8 +166,8 @@ async function startUploadedContinuation(file){
     setContinuationMode($("sourceMode").value);
     $("durationSeconds").value="7.3";syncDuration();renderContinuation();updatePreviewLive();
     await projectCtrl.saveCurrentProject({draft:await persistProjectDraft()});
-    $("sourceUploadStatus").textContent=`Prepared the last ${m.used_duration_seconds.toFixed(2)}s at 24 fps; ${m.source_has_audio?"original soundtrack retained":"source is silent"}. Only its last 1.625s supplies protected context. Accept this source take separately if you want it included in an assembled sequence.`;
-    info("Continuation source saved. Add references/storyboard or timed keyframes, then describe only what happens next.");
+    setContinuationUploadUI({visible:false,text:`✓ Ready · ${file.name} · last ${m.used_duration_seconds.toFixed(2)}s at 24 fps (1.625s context · ${m.source_has_audio?"audio kept":"silent"}).`,tone:'ok'});
+    info(`Continuation ready (${file.name}). Describe only what happens next.`);
   });
 }
 
@@ -297,8 +346,24 @@ async function restoreProjectTake(take){
 function initLabUI(){
   state.hydrationEpoch=0;
   refreshMediaExports();setInterval(refreshMediaExports,2000);
+  const handleContinuationFile=async file=>{
+    if(!file)return;
+    try{await startUploadedContinuation(file);}
+    catch(e){
+      if(e?.cancelled){setContinuationUploadUI({visible:false,text:"Upload cancelled.",tone:'tip'});info("Continuation upload cancelled.");}
+      else{setContinuationUploadUI({visible:false,text:e.message,tone:'error'});info(e.message,true);}
+    }
+  };
   $("uploadContinuation").onclick=()=>{if(!state.busy&&!state.projectLoading)$("continuationFile").click();};
-  $("continuationFile").onchange=async()=>{const file=$("continuationFile").files[0];try{if(file)await startUploadedContinuation(file);}catch(e){$("sourceUploadStatus").textContent=e.message;info(e.message,true);}finally{$("continuationFile").value="";}};
+  if($("cancelContinuationUpload"))$("cancelContinuationUpload").onclick=()=>{if(!activeContinuationXhr)return;setContinuationUploadUI({visible:true,pct:0,busy:true,text:"Cancelling upload…"});activeContinuationXhr.abort();};
+  const dropZone=$("uploadContinuation"),dropHost=$("sourcePanel")||dropZone;
+  if(dropHost){
+    const canDrop=()=>!state.busy&&!state.projectLoading;
+    for(const ev of ["dragenter","dragover"])dropHost.addEventListener(ev,e=>{e.preventDefault();if(canDrop()&&dropZone)dropZone.classList.add("dragging");});
+    for(const ev of ["dragleave","dragend"])dropHost.addEventListener(ev,e=>{if(dropZone&&(!e.relatedTarget||!dropHost.contains(e.relatedTarget)))dropZone.classList.remove("dragging");});
+    dropHost.addEventListener("drop",e=>{e.preventDefault();if(dropZone)dropZone.classList.remove("dragging");if(!canDrop())return;const file=e.dataTransfer?.files?.[0];if(file)void handleContinuationFile(file);});
+  }
+  $("continuationFile").onchange=async()=>{const file=$("continuationFile").files[0];try{if(file)await handleContinuationFile(file);}finally{$("continuationFile").value="";}};
   $("continuationReferences").onclick=()=>useContinuationReferences().catch(e=>info(e.message,true));
   $("refreshContextStorage").onclick=async()=>{try{const data=await projectCtrl.fetchJson("/h3_studio/lab/contexts/usage");$("contextStorage").textContent=`${data.count} contexts · ${data.total_mb} MB. Accepted/active contexts are protected.`;}catch(e){info(e.message,true);}};
   $("refreshProjects").onclick=()=>refreshProjectList().catch(e=>info(e.message,true));
