@@ -24,7 +24,7 @@
       const short=name.replaceAll('\\','/').split('/').pop().replace('.safetensors','');
       label.append(toggle,document.createTextNode(' '+(short==='h3_motion'?'Motion · still ↔ energetic':short.replaceAll('_',' '))));row.append(label);
       const strength=document.createElement('input');strength.type='number';strength.min='-20';strength.max='20';strength.step='.05';strength.value=String(saved?.strength??.5);strength.setAttribute('aria-label','Dial strength '+short);strength.disabled=state.busy||state.projectLoading||!available||!toggle.checked;
-      function commit(){let entry=state.dials.find(d=>d.name===name);if(!entry){entry={name,strength:.5,enabled:false};state.dials.push(entry);}entry.enabled=toggle.checked;entry.strength=Number(strength.value);changed();}
+      function commit(){const entry={name,strength:Number(strength.value),enabled:toggle.checked};const idx=state.dials.findIndex(d=>d.name===name);state.dials=idx>=0?state.dials.map((d,i)=>i===idx?entry:d):[...state.dials,entry];changed();}
       toggle.onchange=()=>{commit();refresh();};strength.onchange=()=>{if(!strength.checkValidity()){strength.reportValidity();strength.value=String(state.dials.find(d=>d.name===name)?.strength??.5);return;}commit();};row.append(strength);
       if(!available){const warning=document.createElement('div');warning.className='tip error';warning.textContent='This saved Dial is unavailable. Install it or uncheck it to continue.';row.append(warning);}
       list.append(row);

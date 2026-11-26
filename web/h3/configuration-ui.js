@@ -240,12 +240,12 @@
     const descriptors={sampler_name:[(caps.sampling_options?.samplers||['res_multistep']).filter(name=>name!=='h3_turbo'||method()==='turbo')],scheduler:[caps.sampling_options?.schedulers||['simple']],weight_dtype:[profile==='hybrid_loader'?['default']:caps.sampling_options?.weight_dtypes||['default']],cfg:['FLOAT',{min:0,max:100}],denoise:['FLOAT',{min:0,max:1}],shift_video:['FLOAT',{min:0,max:100}],shift_audio:['FLOAT',{min:0,max:100}]};
     const turboSampling=method()==='turbo'||method()==='turbo_ref';
     const effective=turboSampling?{...H3Configuration.defaults,...state.sampling,sampler_name:method()==='turbo_ref'?'euler':'h3_turbo',scheduler:'simple',cfg:1,denoise:1,shift_video:12,shift_audio:3}:{...H3Configuration.defaults,...state.sampling};
-    for(const [key,d] of Object.entries(descriptors))field(fields,key,key.replaceAll('_',' '),effective[key],d,value=>state.sampling[key]=value);
+    for(const [key,d] of Object.entries(descriptors))field(fields,key,key.replaceAll('_',' '),effective[key],d,value=>{state.sampling={...state.sampling,[key]:value};});
     if(turboSampling||selectedPika())for(const input of fields.querySelectorAll('input,select'))if(input.dataset.setting!=='weight_dtype')input.disabled=true;
     const refineFields=$('refinementFields');refineFields.replaceChildren();
     const refineDefaults={steps:10,denoise:.4,cfg:1,sampler_name:'res_multistep',scheduler:'simple'};
     const refineDescriptors={steps:['INT',{min:1,max:100}],denoise:['FLOAT',{min:0,max:1}],cfg:['FLOAT',{min:0,max:100}],sampler_name:descriptors.sampler_name,scheduler:descriptors.scheduler};
-    for(const [key,d] of Object.entries(refineDescriptors))field(refineFields,'refine_'+key,key.replaceAll('_',' '),state.refinement?.[key]??refineDefaults[key],d,value=>{state.refinement=state.refinement||{};state.refinement[key]=value;});
+    for(const [key,d] of Object.entries(refineDescriptors))field(refineFields,'refine_'+key,key.replaceAll('_',' '),state.refinement?.[key]??refineDefaults[key],d,value=>{state.refinement={...(state.refinement||{}),[key]:value};});
     field(refineFields,'refine_scale','Latent upscale',state.refineScale??1.25,['FLOAT',{min:1,max:1.25,step:.05}],value=>state.refineScale=value);
     const restrictions=H3Configuration.selectionRestrictions(selectionSpec());
     const audioOptions={steps:6,denoise:.5,sampler_name:'euler',scheduler:'simple',...state.audioRefinement};
@@ -282,7 +282,7 @@
       // Use the submitted baseline as the source of displayed defaults.
       let graph;try{graph=H3GraphBuilder.buildGraph({mode:'text',render_method:method(),target_frames:124},{},caps);}catch{}
       const node=Object.values(graph||{}).find(x=>x.class_type===klass);
-      for(const [key,d] of Object.entries({...schema.required,...schema.optional}))if(node&&key in node.inputs&&!Array.isArray(node.inputs[key])&&(Array.isArray(d[0])||['INT','FLOAT','BOOLEAN'].includes(d[0])))field(patches,key,key.replaceAll('_',' '),state.nodeOptions[klass]?.[key]??node.inputs[key],d,value=>{state.nodeOptions[klass]=state.nodeOptions[klass]||{};state.nodeOptions[klass][key]=value;});
+      for(const [key,d] of Object.entries({...schema.required,...schema.optional}))if(node&&key in node.inputs&&!Array.isArray(node.inputs[key])&&(Array.isArray(d[0])||['INT','FLOAT','BOOLEAN'].includes(d[0])))field(patches,key,key.replaceAll('_',' '),state.nodeOptions[klass]?.[key]??node.inputs[key],d,value=>{state.nodeOptions={...(state.nodeOptions||{}),[klass]:{...(state.nodeOptions?.[klass]||{}),[key]:value}};});
     }
     if(window.H3DialsUI)H3DialsUI.refresh();
     refreshSelectionAvailability();

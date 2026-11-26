@@ -187,22 +187,23 @@ async function persistProjectDraft(){
   for(const item of allInputItems())if(!item.assetId){if(item.restoreError||!item.file)throw Error("Reattach or remove the unavailable input @"+(item.alias||"reference"));const rec=await projectCtrl.uploadAsset(item.file,null);item.assetId=rec.asset_id;}
   const refreshed=await controller.fetchJson(`/h3_studio/lab/projects/${encodeURIComponent(original.project_id)}`);
   if(controller!==projectCtrl||controller.currentProject?.project_id!==original.project_id)throw Error("Project changed while saving inputs.");
-  if(typeof H3Scenes!=='undefined')H3Scenes.assertCanRebase(original,refreshed,scope);
+  if(typeof H3Scenes!=='undefined'&&(original.revision==null||refreshed.revision!==original.revision||(scope.scene_id&&!H3Scenes.find(refreshed,scope))))H3Scenes.assertCanRebase(original,refreshed,scope);
   controller.currentProject=refreshed;updateProjectUI(refreshed);
   return captureProjectDraft();
 }
 function tabProjectDraftKey(projectId){const scope=projectCtrl?.draftScope;return (api("")||location.origin)+"/project/"+projectId+(scope?.scene_id?"/scene/"+scope.scene_id+"/shot/"+(scope.shot_id||"empty"):"");}
 function captureProjectDraft(local=false){
+  const clone=v=>v&&typeof v==='object'?(typeof structuredClone==='function'?structuredClone(v):JSON.parse(JSON.stringify(v))):v;
   const descriptor=item=>item?Object.fromEntries(Object.entries(item).filter(([key])=>!(local&&!item.assetId?["url","previewUrl","meta","uploadProgress","uploadReady","originalPreviewUrl"]:["file","url","previewUrl","meta","uploadProgress","uploadReady","originalPreviewUrl"]).includes(key))):null;
   return {version:1,scene_name:$('sceneName')?.value||'',...(local?{tab_view:typeof workspaceView==='string'?workspaceView:'studio',tab_details:[...document.querySelectorAll('details[id]')].filter(el=>el.open).map(el=>el.id)}:{}),mode:state.mode,prompts:{...state.prompts,[state.mode]:$("prompt").value},canvas:{width:state.width,height:state.height},
     promptMode:$("promptMode").value,frameFit:$("frameFit").value,fitImages:$("fitImages").checked,fitFrames:$("fitFrames").checked,first:descriptor(state.first),last:descriptor(state.last),
-    configuration:{modelProfile:state.modelProfile||"original",checkpoint:state.reuseCheckpoint||state.checkpoint,hybridPreset:state.hybridPreset||"none",sampling:state.sampling||{},nodeOptions:state.nodeOptions||{},audioRefinement:state.audioRefinement||{},sparseAttention:state.sparseAttention||{},dials:state.dials||[],refinement:state.refinement||{},refineScale:state.refineScale??1.25,preserveReferenceAudio:!!state.preserveReferenceAudio,preserveAudioSource:state.preserveAudioSource||null,styleDirection:state.styleDirection},
-    refs:state.refs.map(descriptor),dismissedCatalogAssets:[...(state.dismissedCatalogAssets||[])],guides:state.guides.map(descriptor),continuation:state.continuation,
+    configuration:{modelProfile:state.modelProfile||"original",checkpoint:state.reuseCheckpoint||state.checkpoint,hybridPreset:state.hybridPreset||"none",sampling:clone(state.sampling||{}),nodeOptions:clone(state.nodeOptions||{}),audioRefinement:clone(state.audioRefinement||{}),sparseAttention:clone(state.sparseAttention||{}),dials:clone(state.dials||[]),refinement:clone(state.refinement||{}),refineScale:state.refineScale??1.25,preserveReferenceAudio:!!state.preserveReferenceAudio,preserveAudioSource:state.preserveAudioSource||null,styleDirection:state.styleDirection},
+    refs:state.refs.map(descriptor),dismissedCatalogAssets:[...(state.dismissedCatalogAssets||[])],guides:state.guides.map(descriptor),continuation:clone(state.continuation),
     preparationMode:$("preparationMode")?.value||"auto",enableRefine:$("enableRefine").checked,
-    control:state.control?{...state.control,control_file:undefined,source_file:undefined,mask_file:undefined}:null,
+    control:state.control?clone({...state.control,control_file:undefined,source_file:undefined,mask_file:undefined}):null,
     controlInputs:Object.fromEntries(Object.entries(state.controlInputs||{}).map(([key,value])=>[key,descriptor(value)])),
-    reuse_source:state.reuseSource||null,reuse_missing:state.reuseUnresolved||[],
-    settings:{duration:$("duration").value,durationSeconds:$("durationSeconds").value,steps:$("steps").value,seed:$("seed").value,refSize:$("refSize").value,renderMethod:method()},loras:[...state.loras.filter(x=>x.enabled),...(state.reuseRequiredLoras||[]).filter(l=>!state.loras.some(current=>current.name===l.name&&current.enabled))]};
+    reuse_source:clone(state.reuseSource||null),reuse_missing:[...(state.reuseUnresolved||[])],
+    settings:{duration:$("duration").value,durationSeconds:$("durationSeconds").value,steps:$("steps").value,seed:$("seed").value,refSize:$("refSize").value,renderMethod:method()},loras:[...state.loras.filter(x=>x.enabled).map(x=>({...x})),...(state.reuseRequiredLoras||[]).filter(l=>!state.loras.some(current=>current.name===l.name&&current.enabled)).map(l=>({...l}))]};
 }
 function emptyWorkspaceDraft(){return {mode:'text',prompts:{text:'',frames:'',refs:''},refs:[],dismissedCatalogAssets:[],guides:[],canvas:{width:1344,height:768},settings:{duration:'124',durationSeconds:'5.167',steps:'20',seed:'42',refSize:'max',renderMethod:'native'},loras:[]};}
 async function hydrateWorkspaceDraft(project,{freshTab=false,reuse=false}={}){
@@ -236,12 +237,20 @@ async function hydrateProjectDraft(draft,{preserveFailedLocal=false}={}){
   const controlInputs=Object.fromEntries(controlEntries);
   if(epoch!==state.hydrationEpoch||controller!==projectCtrl){for(const input of [first,last,...refs,...guides,...Object.values(controlInputs)].filter(Boolean))for(const url of new Set([input.url,input.previewUrl]))if(url)URL.revokeObjectURL(url);return;}
   for(const old of allInputItems())for(const url of new Set([old.url,old.previewUrl,old.originalPreviewUrl]))if(url)URL.revokeObjectURL(url);
-  state.first=first;state.last=last;state.refs=refs.filter(Boolean);state.dismissedCatalogAssets=new Set(Array.isArray(draft.dismissedCatalogAssets)?draft.dismissedCatalogAssets:[]);state.guides=guides.filter(Boolean);state.continuation=draft.continuation||null;
+  const clone=v=>v&&typeof v==='object'?(typeof structuredClone==='function'?structuredClone(v):JSON.parse(JSON.stringify(v))):v;
+  state.first=first;state.last=last;state.refs=refs.filter(Boolean);state.dismissedCatalogAssets=new Set(Array.isArray(draft.dismissedCatalogAssets)?draft.dismissedCatalogAssets:[]);state.guides=guides.filter(Boolean);state.continuation=draft.continuation?clone(draft.continuation):null;
   delete state.pikaBefore;
   state.loras=state.loras.map(x=>({...x,enabled:!!draft.loras?.some(l=>l.name===x.name&&l.enabled!==false),strength:draft.loras?.find(l=>l.name===x.name)?.strength??x.strength}));
-  Object.assign(state,{modelProfile:"original",checkpoint:null,hybridPreset:"none",sampling:{},nodeOptions:{},audioRefinement:{},sparseAttention:{},dials:[],refinement:{},refineScale:1.25,preserveReferenceAudio:false,preserveAudioSource:null,styleDirection:null},draft.configuration||{});
+  const config=draft.configuration?clone(draft.configuration):{};
+  Object.assign(state,{modelProfile:"original",checkpoint:null,hybridPreset:"none",sampling:{},nodeOptions:{},audioRefinement:{},sparseAttention:{},dials:[],refinement:{},refineScale:1.25,preserveReferenceAudio:false,preserveAudioSource:null,styleDirection:null},config);
+  if(!state.sampling||typeof state.sampling!=='object')state.sampling={};
+  if(!state.nodeOptions||typeof state.nodeOptions!=='object')state.nodeOptions={};
+  if(!state.audioRefinement||typeof state.audioRefinement!=='object')state.audioRefinement={};
+  if(!state.sparseAttention||typeof state.sparseAttention!=='object')state.sparseAttention={};
+  if(!state.refinement||typeof state.refinement!=='object')state.refinement={};
+  if(!Array.isArray(state.dials))state.dials=[];
   if(window.H3ConfigurationUI)H3ConfigurationUI.refresh();
-  state.control=draft.control||{enabled:false};state.controlInputs=controlInputs;state.preparedContext=null;
+  state.control=draft.control?clone(draft.control):{enabled:false};state.controlInputs=controlInputs;state.preparedContext=null;
   if($("enableRefine"))$("enableRefine").checked=!!draft.enableRefine;
   if($("preparationMode"))$("preparationMode").value=restoredPreparationMode(draft.preparationMode);
   if(window.H3ConnectedStudio)H3ConnectedStudio.restoreControl();
@@ -250,7 +259,7 @@ async function hydrateProjectDraft(draft,{preserveFailedLocal=false}={}){
   $("fitImages").checked=draft.fitImages!==false;$("fitFrames").checked=draft.fitFrames!==false;
   for(const [key,value] of Object.entries(draft.settings||{}))if($(key))$(key).value=value;
   $("seed").value=String(draft.settings?.seed??42);repairSavedSeed();syncDuration();
-  state.desiredLoras=state.lorasLoaded?null:(draft.loras||[]);
+  state.desiredLoras=state.lorasLoaded?null:clone(draft.loras||[]);
   state.aspectFormat=Object.keys(aspectPresets).find(k=>aspectPresets[k].some(([w,h])=>w===state.width&&h===state.height))||"16:9";
   state.mode=draft.mode||"text";$("prompt").value=state.prompts[state.mode]||"";selectMode(state.mode,true);state.loras=state.loras.map(x=>({...x,enabled:!!draft.loras?.some(l=>l.name===x.name),strength:draft.loras?.find(l=>l.name===x.name)?.strength??x.strength}));
   await Promise.all([renderFrameItem("first"),renderFrameItem("last")]);renderRefs();renderGuides();renderContinuation();updatePreviewLive();
@@ -258,7 +267,7 @@ async function hydrateProjectDraft(draft,{preserveFailedLocal=false}={}){
   state.restoreExtraMissing=missing;
   const mediaRequirements=new Set([draft.first,draft.last,...(draft.refs||[]),...(draft.guides||[]),...Object.values(draft.controlInputs||{})].filter(Boolean).flatMap(item=>[item.assetId,item.alias||'Unrecorded reference']));
   state.reuseUnresolved=(draft.reuse_missing||[]).filter(name=>!mediaRequirements.has(name));
-  state.reuseSource=draft.reuse_source||null;state.reuseRequiredLoras=[];state.reuseCheckpoint=null;
+  state.reuseSource=draft.reuse_source?clone(draft.reuse_source):null;state.reuseRequiredLoras=[];state.reuseCheckpoint=null;
   if(draft.reuse_source){
     for(const adapter of draft.loras||[])if(adapter.enabled&&!state.loras.some(l=>l.name===adapter.name&&l.enabled)){state.reuseUnresolved.push('LoRA '+adapter.name);state.reuseRequiredLoras.push(adapter);}
     if(draft.configuration?.checkpoint&&draft.configuration.checkpoint!==selectedCheckpoint()){state.reuseUnresolved.push('Checkpoint '+draft.configuration.checkpoint);state.reuseCheckpoint=draft.configuration.checkpoint;}

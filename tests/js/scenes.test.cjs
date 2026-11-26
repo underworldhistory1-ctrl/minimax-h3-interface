@@ -17,3 +17,48 @@ test('controller leaves original revision and shot draft intact on conflict',asy
 test('project loading restores only valid scope before callbacks, new/duplicate reset stale scope',async()=>{global.H3Scenes=Scenes;const memory=new Map();global.sessionStorage={setItem:(k,v)=>memory.set(k,v),getItem:k=>memory.get(k)};const {ProjectController}=require('../../web/h3/project-controller.js');let observed;const c=new ProjectController({onProjectChanged:()=>observed={...c.draftScope}});c.draftScope={scene_id:'old',shot_id:'old'};c.fetchJson=async()=>({...project(),revision:1});memory.set(c._storageKey('scene_scope.p'),JSON.stringify({scene_id:'s',shot_id:'b'}));await c.loadProject('p');assert.deepEqual(observed,{scene_id:'s',shot_id:'b'});memory.clear();await c.createProject('new');assert.deepEqual(c.draftScope,{});c.draftScope={scene_id:'s',shot_id:'a'};await c.duplicateCurrentProject('copy');assert.deepEqual(c.draftScope,{});delete global.H3Scenes;delete global.sessionStorage;});
 test('tab draft settle waits for an older asynchronous media save before navigation writes',async()=>{let finish,saved=false;const ctx={state:{activeProjectId:'p'},projectCtrl:{},document:{createElement:()=>({append(){},setAttribute(){}}),addEventListener(){}},$:()=>({after(){},append(){},parentElement:{append(){}}}),captureProjectDraft:()=>({prompt:'old'}),tabProjectDraftKey:()=> 'scope',H3TabDraftStore:{save:()=>new Promise(resolve=>{finish=()=>{saved=true;resolve();};})},setInterval(){},setTimeout(){},addEventListener(){},Blob,console};ctx.window=ctx;vm.createContext(ctx);vm.runInContext(fs.readFileSync('web/h3/video-tab-state.js','utf8'),ctx);const flush=ctx.H3VideoTabState.flush();let settled=false;const barrier=ctx.H3VideoTabState.settle().then(()=>{settled=true;});await Promise.resolve();assert.equal(settled,false);finish();await barrier;await flush;assert.equal(saved,true);assert.equal(settled,true);});
 test('linked job recovery takes immutable scene ownership from submitted snapshot',()=>{const meta=Scenes.recoveredMeta({project_snapshot:{scene_id:'s',shot_id:'a',clip_id:'a',draft:{prompt:'saved'},settings:{seed:42}}},{scene_id:'wrong',shot_id:'wrong'});assert.equal(meta.scene_id,'s');assert.equal(meta.shot_id,'a');assert.equal(meta.clip_id,'a');assert.equal(meta.draft.prompt,'saved');assert.equal(meta.settings.seed,42);});
+
+test('hydrating project draft clones nested configuration/control so UI edits cannot trigger false 409 rebase conflicts',async()=>{
+  const box=()=>({replaceChildren(){},textContent:'',classList:{add(){},remove(){},toggle(){}},pause(){},removeAttribute(){},setAttribute(){},hidden:false,style:{},after(){}});
+  const inputs={sceneName:{value:''},prompt:{value:''},promptMode:{value:'guided'},frameFit:{value:'crop'},fitImages:{checked:true},fitFrames:{checked:true},enableRefine:{checked:false},preparationMode:{value:'auto'},duration:{value:'124'},durationSeconds:{value:'5.167'},steps:{value:'8'},seed:{value:'42'},refSize:{value:'max'},confirmEditedSetup:{hidden:true},firstBox:box(),lastBox:box(),clearFirst:box(),clearLast:box(),continuationPanel:box(),continuationPreview:box(),continuationReferences:box(),generate:box(),v2StandbyBanner:box()};
+  const initialProject=()=>({
+    project_id:'p1',revision:1,assets:[],scenes:[],takes:[],
+    draft:{
+      mode:'refs',prompts:{text:'',frames:'',refs:'test prompt'},canvas:{width:1280,height:720},
+      configuration:{modelProfile:'original',sampling:{cfg:1},nodeOptions:{},audioRefinement:{},sparseAttention:{enabled:false},dials:[],refinement:{steps:10}},
+      control:{enabled:false,kind:'pose'},continuation:null,refs:[],guides:[],loras:[],settings:{seed:'42'}
+    }
+  });
+  let serverProject=initialProject();
+  const current=initialProject();
+  const projectCtrl={currentProject:current,draftScope:{},fetchJson:async()=>structuredClone(serverProject),getAsset:async()=>({}),mediaBlob:async()=>new Blob(['x'])};
+  const state={hydrationEpoch:0,mode:'refs',width:1280,height:720,prompts:{text:'',frames:'',refs:''},refs:[],guides:[],loras:[],lorasLoaded:true,controlInputs:{}};
+  const ctx={
+    window:null,document:{querySelectorAll:()=>[],querySelector:()=>box(),createElement:()=>box()},location:{origin:'http://localhost'},URL,Blob,Set,Map,Object,Array,JSON,structuredClone,Promise,Error,
+    $:id=>inputs[id]||null,api:p=>p,method:()=>'native',aspectPresets:{'16:9':[[1280,720]]},
+    selectMode:()=>{},repairSavedSeed:()=>{},syncDuration:()=>{},renderRefs:()=>{},renderEstimates:()=>{},updatePreviewLive:()=>{},updateProjectUI:()=>{},info:()=>{},selectedCheckpoint:()=>null,
+    H3Scenes:Scenes,projectCtrl,state
+  };
+  ctx.window=ctx;
+  vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync('web/lab-ui.js','utf8'),ctx);
+  await ctx.hydrateProjectDraft(current.draft);
+  state.dials.push({name:'h3_motion.safetensors',enabled:true,strength:0.6});
+  state.sampling.cfg=2.5;
+  state.control.enabled=true;
+  assert.deepEqual(current.draft.configuration.dials,[]);
+  assert.equal(current.draft.configuration.sampling.cfg,1);
+  assert.equal(current.draft.control.enabled,false);
+  const persistedSameRev=await ctx.persistProjectDraft();
+  assert.equal(persistedSameRev.configuration.dials.length,1);
+  // Server bumped revision due to another device adding a shared asset (draft unchanged) -> rebase succeeds
+  serverProject=structuredClone(serverProject);
+  serverProject.revision=2;
+  serverProject.assets.push({asset_id:'a1'});
+  await ctx.persistProjectDraft();
+  // Server bumped revision with a real remote edit to this same draft -> 409 conflict still fires
+  serverProject=structuredClone(serverProject);
+  serverProject.revision=3;
+  serverProject.draft.prompts.refs='edited on another device';
+  await assert.rejects(ctx.persistProjectDraft(),e=>e.status===409);
+});
