@@ -72,3 +72,16 @@ test('Pika Flex works with imported continuation and auto-fits mismatched canvas
  assert.equal(ctxNode.inputs.crop,'center');
  assert.equal(graph['8'].inputs.steps,8);
 });
+
+test('hydrating a Pika Reuse draft with empty sampling auto-fills required Pika sampling',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm');
+ const box=()=>({replaceChildren(){},textContent:'',classList:{add(){},remove(){},toggle(){}},pause(){},removeAttribute(){},setAttribute(){},hidden:false,style:{},after(){}});
+ const inputs={sceneName:{value:''},prompt:{value:''},promptMode:{value:'guided'},frameFit:{value:'crop'},fitImages:{checked:true},fitFrames:{checked:true},enableRefine:{checked:false},preparationMode:{value:'auto'},duration:{value:'175'},durationSeconds:{value:'7.3'},steps:{value:'8'},seed:{value:'42'},refSize:{value:'max'},confirmEditedSetup:{hidden:true},firstBox:box(),lastBox:box(),clearFirst:box(),clearLast:box(),continuationPanel:box(),continuationPreview:box(),continuationReferences:box(),generate:box(),v2StandbyBanner:box()};
+ const pika='pika_h3_flex_turbo_8step_hd_ref2va.safetensors';
+ const state={hydrationEpoch:0,mode:'refs',width:864,height:480,prompts:{text:'',frames:'',refs:''},refs:[],guides:[],loras:[{name:pika,enabled:false,strength:1}],lorasLoaded:true,controlInputs:{}};
+ const ctx={window:null,document:{querySelectorAll:()=>[],querySelector:()=>box(),createElement:()=>box()},location:{origin:'http://localhost'},URL,Blob,Set,Map,Object,Array,JSON,structuredClone,Promise,Error,$:id=>inputs[id]||null,api:p=>p,method:()=>'native',aspectPresets:{'16:9':[[864,480]]},selectMode:()=>{},repairSavedSeed:()=>{},syncDuration:()=>{},renderRefs:()=>{},renderEstimates:()=>{},updatePreviewLive:()=>{},updateProjectUI:()=>{},info:()=>{},selectedCheckpoint:()=>C.REF,H3Configuration:C,projectCtrl:{currentProject:null,draftScope:{}},state};
+ ctx.window=ctx;vm.createContext(ctx);vm.runInContext(fs.readFileSync('web/lab-ui.js','utf8'),ctx);
+ await ctx.hydrateProjectDraft({mode:'refs',prompts:{refs:'hello'},canvas:{width:864,height:480},configuration:{modelProfile:'original',checkpoint:C.REF,sampling:{}},loras:[{name:pika,enabled:true,strength:1}],settings:{steps:'8',seed:'42',renderMethod:'native'}});
+ assert.equal(state.sampling.sampler_name,'euler');assert.equal(state.sampling.shift_video,12);assert.equal(state.sampling.cfg,1);
+ assert.doesNotThrow(()=>C.validatePika({mode:'refs',model_profile:'original',checkpoint:C.REF,render_method:'native',steps:8,sampling:state.sampling,loras:state.loras}));
+});

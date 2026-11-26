@@ -213,6 +213,8 @@ function refreshSelectionAvailability(){
   let issue='';try{if(!methodAvailable(method()))throw Error('The selected render method is unavailable for this model/input.');H3Configuration.resolve({...currentRenderSpec(),...spec},caps);}catch(error){issue=error.message;}
   let notice=$('configurationIssue');if(!notice&&$('modelConfiguration')){notice=document.createElement('div');notice.id='configurationIssue';notice.className='tip error';notice.setAttribute('role','status');$('modelConfiguration').append(notice);}
   if(notice){notice.textContent=issue;notice.hidden=!issue;}
+  let dockNotice=$('generateBlockReason');if(!dockNotice&&$('generate')&&typeof document.createElement==='function'&&typeof $('generate').before==='function'){dockNotice=document.createElement('div');dockNotice.id='generateBlockReason';dockNotice.className='tip error';dockNotice.style.cssText='margin:0 0 6px;font-weight:600';dockNotice.setAttribute('role','status');$('generate').before(dockNotice);}
+  if(dockNotice){dockNotice.textContent=issue;dockNotice.hidden=!issue;}
   $('generate').disabled=!!state.busy||!!state.projectLoading||caps.inference_enabled===false||!!issue||(typeof workspaceLocked==='function'&&workspaceLocked());
 }
 function methodAvailable(value){

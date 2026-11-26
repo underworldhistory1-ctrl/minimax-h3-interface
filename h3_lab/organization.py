@@ -229,12 +229,22 @@ class OrganizationMixin(ReuseGroupsMixin):
                 parts = str(settings.get('canvas', '')).replace('×', 'x').split('x')
                 if len(parts) == 2 and all(p.isdigit() for p in parts): canvas = dict(zip(('width', 'height'), map(int, parts)))
             frames = settings.get('target_frames', settings.get('frames', 362))
+            cfg = settings.get('configuration') or {}
+            recovered_sampling = copy.deepcopy(cfg.get('sampling') or cfg.get('settings') or {})
+            recovered_loras = [{**a,'enabled':True} for a in settings.get('loras',[])]
+            if not recovered_sampling:
+                from .configuration import PIKA
+                pika_hit = next((PIKA[a.get('name')] for a in recovered_loras if a.get('name') in PIKA), None)
+                if pika_hit:
+                    _steps, fam = pika_hit
+                    recovered_sampling = {'sampler_name': 'euler', 'scheduler': 'simple', 'cfg': 1, 'denoise': 1, 'shift_video': 12 if fam == 'ref2va' else 6, 'shift_audio': 3}
             draft = {'mode': mode, 'prompts': {mode: settings['prompt']}, 'canvas': canvas or {'width':1280,'height':704},
                 'settings': {'seed': str(seed_value(settings.get('seed', 42))), 'steps': settings.get('steps',20), 'duration': frames,
                     'durationSeconds': frames/24, 'renderMethod': settings.get('render_method','native'), 'refSize': settings.get('reference_detail') or 'match'},
-                'configuration': {'modelProfile': settings.get('configuration',{}).get('profile','original'),
-                    'checkpoint': settings.get('configuration',{}).get('checkpoint'), 'sampling': settings.get('configuration',{}).get('sampling',{})},
-                'refs': [], 'guides': [], 'loras': [{**a,'enabled':True} for a in settings.get('loras',[])], 'preparationMode':'native'}
+                'configuration': {'modelProfile': cfg.get('profile','original'),
+                    'checkpoint': cfg.get('checkpoint'), 'hybridPreset': cfg.get('hybrid_preset') or cfg.get('hybridPreset') or 'none',
+                    'sampling': recovered_sampling, 'dials': copy.deepcopy(cfg.get('dials') or [])},
+                'refs': [], 'guides': [], 'loras': recovered_loras, 'preparationMode':'native'}
             for ref in settings.get('references', []):
                 draft['refs'].append({'assetId':ref.get('asset_id'), 'alias':str(ref.get('name','reference')).lstrip('@'),
                     'kind':ref.get('type','image'), 'role':ref.get('use_as','custom'), 'useAudio':ref.get('video_soundtrack',False),

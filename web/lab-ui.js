@@ -303,6 +303,13 @@ async function hydrateProjectDraft(draft,{preserveFailedLocal=false}={}){
   if(!state.sparseAttention||typeof state.sparseAttention!=='object')state.sparseAttention={};
   if(!state.refinement||typeof state.refinement!=='object')state.refinement={};
   if(!Array.isArray(state.dials))state.dials=[];
+  if(typeof H3Configuration!=='undefined'){
+    const draftPika=(draft.loras||[]).find(l=>l&&l.enabled!==false&&H3Configuration.pikaVariant(l.name));
+    if(draftPika){
+      const required=H3Configuration.pikaSampling(H3Configuration.pikaVariant(draftPika.name));
+      state.sampling={...required,...state.sampling};
+    }
+  }
   if(window.H3ConfigurationUI)H3ConfigurationUI.refresh();
   state.control=draft.control?clone(draft.control):{enabled:false};state.controlInputs=controlInputs;state.preparedContext=null;
   if($("enableRefine"))$("enableRefine").checked=!!draft.enableRefine;
