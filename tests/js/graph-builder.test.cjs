@@ -41,15 +41,22 @@ test('new preset refinement fits the selected output while old refinement graphs
   }
 });
 
-test('1080 continuation crops after AV trim and uses internal generated versus output imported source dimensions',()=>{
+test('1080 continuation crops after AV trim, validates generated canvas, and auto-fits imported canvas',()=>{
   for(const type of ['generated','imported']){
     const continuation={type,source_token:'abcdef123456',source_file:'source.mp4',source_canvas:{width:1920,height:type==='generated'?1088:1080}};
     const g=buildGraph({width:1920,height:1080,target_frames:175,continuation},{},{continuation_ready:true});
     const crop=g[g['11'].inputs.images[0]],trim=g[crop.inputs.image[0]];
     assert.equal(crop.class_type,'ImageCrop');assert.equal(trim.class_type,'H3LabTrimAV');assert.deepEqual(g['11'].inputs.audio,[crop.inputs.image[0],1]);
-    if(type==='generated')assert.equal(Object.values(g).find(n=>n.class_type==='H3LabLoadContext').inputs.height,1088);
-    continuation.source_canvas.height=type==='generated'?1080:1088;
-    assert.throws(()=>buildGraph({width:1920,height:1080,target_frames:175,continuation},{},{continuation_ready:true}),/canvas/);
+    if(type==='generated'){
+      assert.equal(Object.values(g).find(n=>n.class_type==='H3LabLoadContext').inputs.height,1088);
+      continuation.source_canvas.height=1080;
+      assert.throws(()=>buildGraph({width:1920,height:1080,target_frames:175,continuation},{},{continuation_ready:true}),/canvas/);
+    }else{
+      assert.equal(Object.values(g).find(n=>n.class_type==='MiniMaxH3ExistingVideoMaskedContext').inputs.crop,'disabled');
+      continuation.source_canvas={width:864,height:480};
+      const fitted=buildGraph({width:1920,height:1080,target_frames:175,continuation},{},{continuation_ready:true});
+      assert.equal(Object.values(fitted).find(n=>n.class_type==='MiniMaxH3ExistingVideoMaskedContext').inputs.crop,'center');
+    }
   }
 });
 

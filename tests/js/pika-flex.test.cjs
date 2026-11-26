@@ -59,3 +59,16 @@ test('Combat V2 stacks with Pika across Text, Frames and References in any order
   assert.equal(graph['8'].inputs.steps,C.pikaVariant(tc.pika).steps);
  }
 });
+
+test('Pika Flex works with imported continuation and auto-fits mismatched canvas',()=>{
+ const pika='pika_h3_flex_turbo_8step_hd_ref2va.safetensors';
+ const supported={...caps,continuation_ready:true};
+ const continuation={type:'imported',source_file:'clip.mp4',source_canvas:{width:864,height:480},context_length:39,audio_feather_ticks:8};
+ const spec=C.normalizeSelection({mode:'refs',model_profile:'original',width:1920,height:1080,target_frames:175,
+  loras:[{name:pika,enabled:true,strength:1}],references:[{kind:'image',alias:'hero'}],continuation},'continuation',supported);
+ assert.equal(spec.loras[0].enabled,true);assert.equal(spec.steps,8);
+ const graph=buildGraph(spec,{hero:'hero.png'},supported);
+ const ctxNode=Object.values(graph).find(n=>n.class_type==='MiniMaxH3ExistingVideoMaskedContext');
+ assert.equal(ctxNode.inputs.crop,'center');
+ assert.equal(graph['8'].inputs.steps,8);
+});

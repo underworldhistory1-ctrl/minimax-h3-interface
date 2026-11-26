@@ -90,7 +90,7 @@ def validate_input_paths(spec, graph, capabilities):
         split_link=values.get('source_frames');split=linked(split_link,'GetVideoComponents')
         if not cont.get('source_file') or linked(split.get('video'),'LoadVideo')!={'file':cont['source_file']}:
             raise ValueError('Continuation source video disagrees')
-        if any(values.get(k)!=v for k,v in {'source_audio':[split_link[0],1],'vae':['4',0],'audio_vae':['5',0],'source_fps':24,'crop':'disabled'}.items()):
+        if values.get('crop') not in ('disabled','center') or any(values.get(k)!=v for k,v in {'source_audio':[split_link[0],1],'vae':['4',0],'audio_vae':['5',0],'source_fps':24}.items()):
             raise ValueError('Continuation source AV conditioning disagrees')
     trims=[(key,n.get('inputs')) for key,n in graph.items() if n.get('class_type')=='H3LabTrimAV']
     expected={'images':['9',0],'audio':['10',0],'trim_frames':[context_link[0],1],'fps':24}

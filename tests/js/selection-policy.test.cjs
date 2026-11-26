@@ -22,7 +22,8 @@ test('Pika selection owns its required settings without deleting attached inputs
 test('hydration retains saved intent and exposes invalid combinations',()=>{
  const s={mode:'refs',render_method:'turbo',steps:6};assert.deepEqual(C.normalizeSelection(s,'restore',caps),s);
  assert.match(C.selectionRestrictions({control:{enabled:true}}).audio,/ControlNet/);
- assert.match(C.selectionRestrictions({continuation:{type:'generated'}}).pika,/continuation/i);
+ assert.match(C.selectionRestrictions({continuation:{type:'generated'}}).turbo,/continuation/i);
+ assert.equal(C.selectionRestrictions({continuation:{type:'imported'}}).pika,'');
 });
 test('starting continuation selects the supported native workflow and retains source',()=>{
  const continuation={type:'imported',source_file:'source.mp4'};

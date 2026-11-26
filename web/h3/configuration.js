@@ -124,7 +124,7 @@
     const s={...spec,sampling:{...spec.sampling},loras:(spec.loras||[]).map(x=>({...x}))};
     if(action==='mode'&&s.mode!=='refs')s.preserve_reference_audio=null;
     let pika=s.loras.find(x=>x.enabled&&pikaVariant(x.name));
-    if(action==='continuation'&&s.continuation){for(const l of s.loras)if(pikaVariant(l.name))l.enabled=false;pika=null;if(['turbo','turbo_ref'].includes(s.render_method)){s.render_method='native';s.steps=20;}s.enable_refine=false;s.refine=false;s.control={...s.control,enabled:false};}
+    if(action==='continuation'&&s.continuation){if(['turbo','turbo_ref'].includes(s.render_method)){s.render_method='native';s.steps=20;}s.enable_refine=false;s.refine=false;s.control={...s.control,enabled:false};}
     if(action==='mode'&&pika){
       const variant=pikaVariant(pika.name),family=s.mode==='refs'?'ref2va':'fl2va';
       if(variant.family!==family){const name=Object.keys(PIKA).find(n=>PIKA[n].steps===variant.steps&&PIKA[n].variant===variant.variant&&PIKA[n].family===family),other=s.loras.find(x=>x.name===name);pika.enabled=false;if(other){other.enabled=true;pika=other;}else pika=null;}
@@ -163,7 +163,7 @@
       control:(managed?'This selected adapter/method requires generation without ControlNet.':'')||(spec.enable_refine||spec.refine?'Disable refinement before ControlNet.':spec.continuation?'Clear continuation before ControlNet.':spec.audio_refinement?.enabled?'Disable audio enhancement before ControlNet.':''),
       audio:single||(spec.control?.enabled?'Disable ControlNet before audio enhancement.':spec.preserve_reference_audio?'Original reference soundtrack is preserved; generated-audio enhancement is bypassed.':''),
       sparse:turbo?'Retired Turbo v4 requires dense sampling.':'',
-      pika:spec.continuation?'Clear continuation before selecting Pika.':'',turbo:spec.continuation?'Clear continuation before selecting Turbo.':''};
+      pika:'',turbo:spec.continuation?'Clear continuation before selecting Turbo.':''};
   }
   function validatePika(spec){
     const active=(spec.loras||[]).filter(x=>x.enabled), selected=active.filter(x=>pikaVariant(x.name));
@@ -173,7 +173,7 @@
     if(!pikaProfileCompatible(spec)||(spec.render_method||'native')!=='native'||variant.family!==(spec.mode==='refs'?'ref2va':'fl2va'))throw Error('Pika Flex requires Original or supported Singularity v2 References with the matching adapter.');
     if(Number(spec.steps)!==variant.steps)throw Error('Pika Flex requires '+variant.steps+' steps.');
     const singularityRefs=spec.model_profile==='singularity'&&spec.mode==='refs';
-    if(spec.control?.enabled||spec.continuation||spec.audio_refinement?.enabled||(!singularityRefs&&(spec.enable_refine||spec.refine)))throw Error('Pika Flex requires a single pass without refinement, ControlNet or continuation.');
+    if(spec.control?.enabled||spec.audio_refinement?.enabled||(!singularityRefs&&(spec.enable_refine||spec.refine)))throw Error('Pika Flex requires a single pass without refinement or ControlNet.');
     const required={sampler_name:'euler',scheduler:'simple',cfg:1,denoise:1,shift_video:variant.family==='ref2va'?12:6,shift_audio:3};
     for(const [key,value] of Object.entries(required))if(spec.sampling?.[key]!==value)throw Error('Pika Flex sampling disagrees: '+key);
     return variant;

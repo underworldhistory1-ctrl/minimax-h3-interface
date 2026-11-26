@@ -244,8 +244,8 @@ def validate_pika(spec):
         raise ValueError('Pika Flex requires Original or supported Singularity v2 References and its matching transformer')
     if lora.get('strength', 1) != 1 or node.get('class_type') != 'LoraLoaderModelOnly' or node.get('inputs', {}).get('lora_name') != name or node.get('inputs', {}).get('strength_model') != 1:
         raise ValueError('Pika Flex adapter wiring or strength disagrees')
-    if any(spec.get(k) for k in ('continuation',)) or (spec.get('control') or {}).get('enabled') or (spec.get('audio_refinement') or {}).get('enabled'):
-        raise ValueError('Pika Flex requires a pass without additional control/continuation')
+    if (spec.get('control') or {}).get('enabled') or (spec.get('audio_refinement') or {}).get('enabled'):
+        raise ValueError('Pika Flex requires a pass without additional control or audio enhancement')
     if any(n.get('class_type') != 'LoraLoaderModelOnly' or n.get('inputs', {}).get('lora_name') != name or n.get('inputs', {}).get('strength_model') != 1 for _, n in nodes):
         raise ValueError('Pika Flex refinement adapter disagrees')
     chain_count = sum(n.get('class_type') == 'LoraLoaderModelOnly' for n in graph.values())

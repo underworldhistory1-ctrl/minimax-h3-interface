@@ -71,9 +71,7 @@
     if (renderSpec.continuation) {
       const cont = renderSpec.continuation;
       if(mode==='frames')throw new Error("Continuation uses protected source context; use timed guides instead of start/end frames.");
-      const sourceWidth = cont.type === 'generated' ? width : canvas.outputWidth;
-      const sourceHeight = cont.type === 'generated' ? height : canvas.outputHeight;
-      if(cont.source_canvas&&(Number(cont.source_canvas.width)!==sourceWidth||Number(cont.source_canvas.height)!==sourceHeight))throw new Error("Continuation canvas must match its source.");
+      if(cont.type==='generated'&&cont.source_canvas&&(Number(cont.source_canvas.width)!==width||Number(cont.source_canvas.height)!==height))throw new Error("Continuation canvas must match its source.");
       if(cont.type==='generated'&&cont.source_model&&cont.source_model!==config.checkpoint)throw new Error("Changing the continuation checkpoint requires the explicit video re-encode path.");
       if (!["generated", "imported"].includes(cont.type)) throw new Error("Unknown continuation type.");
       if (!(cont.type === "generated" ? cont.source_token : cont.source_file)) throw new Error("Continuation source is missing.");
@@ -393,7 +391,8 @@
         g[sourceId] = { class_type: 'LoadVideo', inputs: { file: canonicalFile(cont.source_file) } };
         const splitId = allocate(Number(sourceId) + 1);
         g[splitId] = { class_type: 'GetVideoComponents', inputs: { video: [sourceId, 0] } };
-        g[contextId] = { class_type: 'MiniMaxH3ExistingVideoMaskedContext', inputs: { latent: ['6', 1], vae: ['4', 0], audio_vae: ['5', 0], source_frames: [splitId, 0], source_audio: [splitId, 1], source_fps: 24, context_length: contextLength, crop: 'disabled', audio_feather_ticks: Number(cont.audio_feather_ticks ?? 8) } };
+        const matchesSource = !cont.source_canvas || (Number(cont.source_canvas.width) === canvas.outputWidth && Number(cont.source_canvas.height) === canvas.outputHeight);
+        g[contextId] = { class_type: 'MiniMaxH3ExistingVideoMaskedContext', inputs: { latent: ['6', 1], vae: ['4', 0], audio_vae: ['5', 0], source_frames: [splitId, 0], source_audio: [splitId, 1], source_fps: 24, context_length: contextLength, crop: matchesSource ? 'disabled' : 'center', audio_feather_ticks: Number(cont.audio_feather_ticks ?? 8) } };
       }
       g['8'].inputs.latent_image = [contextId, 0];
       const trimId = allocate(90);

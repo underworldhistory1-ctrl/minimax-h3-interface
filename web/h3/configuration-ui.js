@@ -21,11 +21,10 @@
     for(const l of choices){
       const p=H3Configuration.pikaVariant(l.name),o=document.createElement('option');o.value=l.name;
       o.textContent=H3Configuration.pikaWorkflow({loras:[{...l,enabled:true}]}).title;
-      o.disabled=p.family!==family||!!state.continuation;select.append(o);
+      o.disabled=p.family!==family;select.append(o);
     }
     select.value=active?.name||'';select.disabled=state.busy||state.projectLoading||!choices.length&&!active;
     $('pikaAccelerationNotice').textContent=active?H3Configuration.pikaWorkflow({loras:[active]}).detail:choices.length?'Optional fused Turbo adapter: 8-step HD for detail comparison, 4-step for speed, Lite for a smaller adapter, 2-step Draft for References previews. Selection applies matching weights and sampling. No extra node pack is required.':'No matching Pika Turbo adapter is installed for this mode. Run the launcher to prepare the verified files.';
-    if(state.continuation)$('pikaAccelerationNotice').textContent+=' Clear continuation before enabling Pika; existing source media is retained.';
   }
   panel.querySelector('#pikaAcceleration').onchange=()=>{
     if(state.busy||state.projectLoading)return;
@@ -134,7 +133,6 @@
   function changed(){refreshSelectionAvailability();saveDraft();updatePreviewLive();renderEstimates();}
   $('modelProfile').onchange=()=>{
     if(state.busy)return;
-    if(state.continuation?.type==='generated'){info('Re-encode the source video before changing checkpoint families.',true);$('modelProfile').value=state.modelProfile||'original';return;}
     const profile=$('modelProfile').value;
     state.modelProfile=profile;
     if(profile==='singularity'){

@@ -263,8 +263,6 @@ function selectMode(mode, internal=false) {
   if (state.busy || state.projectLoading&&!internal) return;
   if(!internal&&state.continuation){
     if(mode==="frames"){info("Use Temporal keyframes for the new content. The continuation source already supplies the protected opening context.",true);return;}
-    const expected=state.modelProfile&&state.modelProfile!=="original"?selectedCheckpoint():(mode==="refs"?modelRef:modelFL);
-    if(state.continuation.type==="generated"&&state.continuation.source_model!==expected){info("Use the Active continuation re-encode action before changing this source's checkpoint.",true);return;}
   }
   if(!internal&&document.querySelector('.mode[data-mode="'+mode+'"]')?.disabled)return;
   state.prompts[state.mode]=$("prompt").value;
@@ -405,7 +403,7 @@ function renderEstimates() {
       const pressed = fmt === currentFmt;
       el.setAttribute("aria-pressed",String(pressed));
       el.classList.toggle("selected",pressed);
-      el.disabled=state.busy||state.projectLoading||!!state.continuation;
+      el.disabled=state.busy||state.projectLoading;
     }
   }
   const activeSizes = aspectPresets[currentFmt] || aspectPresets["16:9"];
@@ -420,8 +418,8 @@ function renderEstimates() {
     const time = document.createElement("span");
     time.textContent = estimateText(est);
     b.append(strong,time);
-    b.disabled=state.busy||state.projectLoading||!!state.continuation;
-    b.onclick = () => {if(state.busy||state.projectLoading||state.continuation)return;state.width=w;state.height=h;renderEstimates();saveDraft();};
+    b.disabled=state.busy||state.projectLoading;
+    b.onclick = () => {if(state.busy||state.projectLoading)return;state.width=w;state.height=h;renderEstimates();saveDraft();};
     wrap.append(b);
   });
   state.estimated = estimateFor();
@@ -448,9 +446,9 @@ function renderEstimates() {
     contLock.hidden=!state.continuation;
     if(state.continuation&&typeof contLock.replaceChildren==="function"){
       contLock.replaceChildren();
-      const title=document.createElement("strong");title.textContent="Canvas locked by active continuation ("+(state.continuation.source_name||"source video")+" · "+state.width+"×"+state.height+")";
-      const note=document.createTextNode("Format and resolution are locked to match the continuation video. Clear continuation to change size or use Pika/Frames.");
-      const clearBtn=document.createElement("button");clearBtn.type="button";clearBtn.className="button alt smallbtn";clearBtn.style.marginTop="6px";clearBtn.textContent="Clear continuation & unlock";
+      const title=document.createElement("strong");title.textContent="Active continuation: "+(state.continuation.source_name||"source video");
+      const note=document.createTextNode("Will auto-fit to "+state.width+"×"+state.height+" on render. ");
+      const clearBtn=document.createElement("button");clearBtn.type="button";clearBtn.className="button alt smallbtn";clearBtn.style.marginTop="6px";clearBtn.textContent="Clear continuation";
       clearBtn.disabled=!!(state.busy||state.projectLoading);
       clearBtn.onclick=()=>{if($("clearContinuation"))$("clearContinuation").click();};
       contLock.append(title,note,document.createElement("br"),clearBtn);
@@ -491,7 +489,7 @@ function renderLoras() {
     const combat=H3Configuration.isCombatV2(item.name);
     const realism=/^h3-realism-people-t2v-i2v-r2v\.safetensors$/i.test(item.name);
     const managed=item.name===turboName;
-    const incompatible=!loraModeCompatible(item.name,state.mode)||!!(H3Configuration.pikaVariant(item.name)&&state.continuation);
+    const incompatible=!loraModeCompatible(item.name,state.mode);
     const row=document.createElement("div");row.className="ref";
     const main=document.createElement("label");main.style.cssText="display:flex;align-items:center;gap:8px;margin:0;color:var(--text)";
     const toggle=document.createElement("input");toggle.type="checkbox";toggle.checked=managed?method()==="turbo":item.enabled;toggle.disabled=managed||state.busy||state.projectLoading||(incompatible||state.nodesReady?.LoraLoaderModelOnly===false)&&!item.enabled;
@@ -585,7 +583,6 @@ function aliasName(fileName) {
 }
 function setAspectFormat(fmt){
   if(state.busy||state.projectLoading)return;
-  if(state.continuation){info("The continuation canvas is locked to its source. Clear continuation before changing aspect or size.",true);return;}
   state.aspectFormat=fmt;
   const list=aspectPresets[fmt]||aspectPresets["16:9"];
   state.width=list[0][0];
@@ -1423,9 +1420,13 @@ async function generate() {
   try{
     state.labJobId=null;state.runMeta=null;state.preparedContext=null;state.queuePhase=null;
     const seed=resolveSeedInput();
-    if(state.continuation){const c=state.continuation;
-      if(!continuationCanvasMatches(c))throw Error("Continuation must use the source canvas.");
-      if(c.type==="generated"&&c.source_model!==selectedCheckpoint())throw Error("For another checkpoint, choose Video context and re-encode the source; direct latent switching has not been validated.");
+    if(state.continuation?.type==="generated"&&(!continuationCanvasMatches(state.continuation)||state.continuation.source_model!==selectedCheckpoint())){
+      const c=state.continuation;
+      const source=projectCtrl?.currentProject?.takes?.find(t=>t.take_id===c.source_take_id)?.output_file||c.source_output;
+      if(!source)throw Error("Continuation source video is unavailable for automatic re-encode.");
+      const imported=await post("/h3_studio/lab/media/import_video",{output_file:source,project_id:state.activeProjectId});
+      state.continuation={...c,type:"imported",source_token:undefined,source_model:undefined,source_asset_id:imported.asset.asset_id,source_canvas:{width:imported.metadata.width,height:imported.metadata.height},source_output:source,source_duration_seconds:imported.metadata.frame_count/24};
+      renderContinuation();
     }
     prompt=prepareWithAI?H3PromptInput.normalize($("prompt").value).text:resolvedPrompt();
     if(!prompt)throw Error("Write the scene prompt first.");
@@ -1928,22 +1929,24 @@ if($("extendVideo")) $("extendVideo").onclick=async()=>{
     await refreshLabCapabilities();
     if(!state.labCapabilities?.continuation_ready)throw Error("Install the pinned continuation engine on the isolated server first. See Lab readiness.");
     const token=entry.takeId||entry.file.filename.match(/h3_studio_([a-f0-9]{12})/)?.[1];
-    if($("extendSourceMethod").value==="imported"){
+    const useImported=async()=>{
       const imported=await post("/h3_studio/lab/media/import_video",{filename:entry.file.filename,output_file:resultOutputPath(entry),project_id:state.activeProjectId});
-      if(imported.metadata.width!==state.width||imported.metadata.height!==state.height)throw Error("Use the source video's canvas before extending it.");
       state.currentClipId="clip_"+crypto.randomUUID();
-    state.continuation={type:"imported",source_take_id:entry.takeId,source_asset_id:imported.asset.asset_id,source_canvas:{width:imported.metadata.width,height:imported.metadata.height},source_output:resultOutputPath(entry),source_name:entry.file.filename,source_duration_seconds:imported.metadata.frame_count/24,context_length:39,audio_feather_ticks:8};
+      state.continuation={type:"imported",source_take_id:entry.takeId,source_asset_id:imported.asset.asset_id,source_canvas:{width:imported.metadata.width,height:imported.metadata.height},source_output:resultOutputPath(entry),source_name:entry.file.filename,source_duration_seconds:imported.metadata.frame_count/24,context_length:39,audio_feather_ticks:8};
       setContinuationMode(state.mode==="frames"?"text":state.mode);
-      $("durationSeconds").value="7.3";syncDuration();renderContinuation();H3StudioUX.revealControl($("prompt"));$("prompt").focus();updatePreviewLive();return;
-    }
-    if(!token)throw Error("This older clip has no saved sampler context. Choose Video context · re-encode.");
-    const context=await projectCtrl.fetchJson(`/h3_studio/lab/contexts/${encodeURIComponent(token)}`);
+      if(!Number.isFinite(Number($("durationSeconds").value))||Number($("durationSeconds").value)<3.5)$("durationSeconds").value="7.3";
+      syncDuration();renderContinuation();$("prompt").placeholder="Describe continuation motion and sound…";H3StudioUX.revealControl($("prompt"));$("prompt").focus();updatePreviewLive();
+    };
+    if($("extendSourceMethod").value==="imported"||!token){await useImported();return;}
+    let context=null;
+    try{context=await projectCtrl.fetchJson(`/h3_studio/lab/contexts/${encodeURIComponent(token)}`);}catch{}
     const expected=selectedCheckpoint();
-    if(context.model_id!==expected||context.width!==samplingCanvas().width||context.height!==samplingCanvas().height)throw Error("Use the source checkpoint and canvas before extending this clip. Switching checkpoints has not been validated.");
+    if(!context||context.model_id!==expected||context.width!==samplingCanvas().width||context.height!==samplingCanvas().height){await useImported();return;}
     state.currentClipId="clip_"+crypto.randomUUID();
     state.continuation={type:"generated",source_take_id:entry.takeId,source_token:token,source_model:context.model_id,source_canvas:{width:context.width,height:context.height},source_output:resultOutputPath(entry),source_name:entry.file.filename,context_length:39,audio_feather_ticks:8};
     setContinuationMode(state.mode==="frames"?"text":state.mode);
-    $("durationSeconds").value="7.3";syncDuration();renderContinuation();
+    if(!Number.isFinite(Number($("durationSeconds").value))||Number($("durationSeconds").value)<3.5)$("durationSeconds").value="7.3";
+    syncDuration();renderContinuation();
     $("prompt").placeholder="Describe continuation motion and sound…";H3StudioUX.revealControl($("prompt"));$("prompt").focus();
     updatePreviewLive();
     });
@@ -2320,6 +2323,7 @@ function updateProjectUI(proj) {
   if(projectURL!==location.href)history.replaceState(null,'',projectURL);
   if(typeof H3ScenesUI!=='undefined')H3ScenesUI.render();
   if ($("projectNameDisplay")) $("projectNameDisplay").textContent = proj.name || 'Project';
+  if ($("workspaceProjectLabel")) $("workspaceProjectLabel").textContent = proj.name || 'Project';
   if ($("projectRevision")) $("projectRevision").textContent = `Rev ${proj.revision || 1}`;
   if (Array.isArray(proj.assets) && Array.isArray(state.refs)) {
     let refsChanged = false;

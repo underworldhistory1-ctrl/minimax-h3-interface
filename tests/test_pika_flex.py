@@ -55,3 +55,22 @@ class PikaTests(unittest.TestCase):
                 }
                 built = json.loads(subprocess.check_output(['node', '-e', script, json.dumps([spec, assets])], text=True))
                 validate_configuration(built, {})
+
+    def test_pika_with_imported_continuation_and_autofit_canvas(self):
+        import json, subprocess
+        spec = {
+            'model_profile': 'original',
+            'mode': 'refs',
+            'render_method': 'native',
+            'width': 1920,
+            'height': 1080,
+            'target_frames': 175,
+            'steps': 8,
+            'sampling': {'sampler_name': 'euler', 'scheduler': 'simple', 'cfg': 1, 'denoise': 1, 'shift_video': 12, 'shift_audio': 3},
+            'loras': [{'name': 'pika_h3_flex_turbo_8step_hd_ref2va.safetensors', 'enabled': True, 'strength': 1}],
+            'references': [{'kind': 'image', 'alias': 'hero'}],
+            'continuation': {'type': 'imported', 'source_file': 'clip.mp4', 'source_canvas': {'width': 864, 'height': 480}, 'context_length': 39, 'audio_feather_ticks': 8},
+        }
+        script = "const [s,a]=JSON.parse(process.argv[1]);s.workflow=require('./web/h3/graph-builder').buildGraph(s,a,{continuation_ready:true,sampling_options:{samplers:['euler'],schedulers:['simple'],weight_dtypes:['default']}});console.log(JSON.stringify(s));"
+        built = json.loads(subprocess.check_output(['node', '-e', script, json.dumps([spec, {'hero': 'hero.png'}])], text=True))
+        validate_configuration(built, {'continuation_ready': True})

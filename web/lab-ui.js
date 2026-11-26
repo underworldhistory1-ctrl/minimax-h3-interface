@@ -153,21 +153,26 @@ async function startUploadedContinuation(file){
           setContinuationUploadUI({visible:true,pct:100,busy:true,text:`Uploaded ${formatBytes(file.size)} · preparing 24 fps continuation on server…`});
         }
       );
+      activeContinuationXhr=null;
+      setContinuationUploadUI({visible:true,pct:100,busy:true,text:`Saving project & continuation setup…`});
+      const project=await projectCtrl.loadProject(state.activeProjectId);
+      const m=result.metadata;
+      state.continuation={type:"imported",source_take_id:result.take.take_id,source_asset_id:result.asset.asset_id,
+        source_canvas:{width:m.width,height:m.height},source_output:m.source_output,source_name:file.name,
+        source_duration_seconds:m.used_duration_seconds,source_has_audio:m.source_has_audio,context_length:39,audio_feather_ticks:8};
+      state.currentClipId="clip_"+crypto.randomUUID();
+      setContinuationMode($("sourceMode").value);
+      if(!Number.isFinite(Number($("durationSeconds").value))||Number($("durationSeconds").value)<3.5)$("durationSeconds").value="7.3";
+      syncDuration();renderContinuation();updatePreviewLive();
+      const draft=await persistProjectDraft();
+      await projectCtrl.saveCurrentProject({draft,assets:mergeProjectAssetDescriptors(projectCtrl.currentProject.assets||[],allInputItems())});
+      setContinuationUploadUI({visible:false,text:`✓ Ready · ${file.name} · last ${m.used_duration_seconds.toFixed(2)}s at 24 fps (1.625s context · ${m.source_has_audio?"audio kept":"silent"}).`,tone:'ok'});
+      info(`Continuation ready (${file.name}). Describe only what happens next.`);
     }finally{
       activeContinuationXhr=null;
-      setContinuationUploadUI({visible:false,pct:0,busy:false});
+      const bar=$("sourceUploadBar");if(bar)bar.hidden=true;
+      const prog=$("sourceUploadProgress");if(prog)prog.classList.remove("busy");
     }
-    const project=await projectCtrl.loadProject(state.activeProjectId);
-    const m=result.metadata;
-    state.continuation={type:"imported",source_take_id:result.take.take_id,source_asset_id:result.asset.asset_id,
-      source_canvas:{width:m.width,height:m.height},source_output:m.source_output,source_name:file.name,
-      source_duration_seconds:m.used_duration_seconds,source_has_audio:m.source_has_audio,context_length:39,audio_feather_ticks:8};
-    state.currentClipId="clip_"+crypto.randomUUID();
-    setContinuationMode($("sourceMode").value);
-    $("durationSeconds").value="7.3";syncDuration();renderContinuation();updatePreviewLive();
-    await projectCtrl.saveCurrentProject({draft:await persistProjectDraft()});
-    setContinuationUploadUI({visible:false,text:`✓ Ready · ${file.name} · last ${m.used_duration_seconds.toFixed(2)}s at 24 fps (1.625s context · ${m.source_has_audio?"audio kept":"silent"}).`,tone:'ok'});
-    info(`Continuation ready (${file.name}). Describe only what happens next.`);
   });
 }
 
