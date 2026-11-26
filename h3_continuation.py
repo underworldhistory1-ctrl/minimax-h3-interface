@@ -153,9 +153,19 @@ class H3LabTrimAV:
             raise ValueError("A valid generated audio buffer is required")
         start = round(trim_frames * rate / fps)
         count = round((len(images) - trim_frames) * rate / fps)
-        if waveform.shape[-1] < start + count:
-            raise ValueError("Generated audio is shorter than the unique continuation")
-        return images[trim_frames:], {**audio, "waveform": waveform[..., start:start + count]}
+        end = start + count
+        max_grid_rounding = round(rate / 40) + 1  # H3 audio VAE uses a 40 Hz latent grid (<= 1 tick = 25 ms)
+        if waveform.shape[-1] < end:
+            deficit = end - waveform.shape[-1]
+            if waveform.shape[-1] <= start or deficit > max_grid_rounding:
+                raise ValueError("Generated audio is shorter than the unique continuation")
+            import torch
+            trimmed = waveform[..., start:]
+            pad = torch.zeros((*trimmed.shape[:-1], deficit), dtype=trimmed.dtype, device=trimmed.device)
+            trimmed = torch.cat((trimmed, pad), dim=-1)
+        else:
+            trimmed = waveform[..., start:end]
+        return images[trim_frames:], {**audio, "waveform": trimmed}
 
 
 NODE_CLASS_MAPPINGS = {"H3LabLoadContext": H3LabLoadContext, "H3LabTrimAV": H3LabTrimAV}

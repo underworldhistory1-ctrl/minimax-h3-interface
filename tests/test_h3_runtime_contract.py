@@ -60,6 +60,13 @@ class RuntimeContextTests(unittest.TestCase):
         self.assertEqual(len(out),136);self.assertEqual(sound['waveform'].shape[-1],272000)
         self.assertEqual(sound['waveform'][0,0,0],78000)
         with self.assertRaises(ValueError):self.mod.H3LabTrimAV().trim(images,{'sample_rate':48000,'waveform':torch.zeros(1,1,10)},39)
+        # 311 and 362 frames round down on H3's 40 Hz audio latent grid (518 and 603 ticks -> 8.3 ms short)
+        for total_frames, ticks in ((311, 518), (362, 603)):
+            imgs=torch.zeros(total_frames,2,2,3)
+            wav=torch.ones(1,2,ticks*800)
+            trimmed_imgs,trimmed_audio=self.mod.H3LabTrimAV().trim(imgs,{'sample_rate':32000,'waveform':wav},39)
+            self.assertEqual(len(trimmed_imgs),total_frames-39)
+            self.assertEqual(trimmed_audio['waveform'].shape[-1],round((total_frames-39)*32000/24))
 
 class QueueBridgeTests(unittest.IsolatedAsyncioTestCase):
     async def test_loopback_submission_and_definite_rejection(self):
