@@ -35,3 +35,27 @@ test('Anime and Pika stay selected together with Pika first on both Ref2VA profi
   assert.equal(graph['8'].inputs.steps,8);
  }
 });
+
+test('Combat V2 stacks with Pika across Text, Frames and References in any order',()=>{
+ const combat=C.COMBAT_V2;
+ const supported={...caps,model_catalog:[{name:C.SINGULARITY_V2,profiles:['singularity']}]};
+ const cases=[
+  {mode:'text',profile:'original',pika:'pika_h3_flex_turbo_8step_hd_fl2va.safetensors',extra:{},assets:{}},
+  {mode:'frames',profile:'original',pika:'pika_h3_flex_turbo_4step_fl2va.safetensors',extra:{first:{asset_id:'f1'}},assets:{first:'first.png'}},
+  {mode:'refs',profile:'original',pika:'pika_h3_flex_turbo_8step_hd_ref2va.safetensors',extra:{references:[{kind:'image',alias:'hero'}]},assets:{hero:'hero.png'}},
+  {mode:'refs',profile:'singularity',pika:'pika_h3_flex_turbo_4step_ref2va_lite_r32.safetensors',extra:{checkpoint:C.SINGULARITY_V2,references:[{kind:'image',alias:'hero'}]},assets:{hero:'hero.png'}},
+  {mode:'refs',profile:'original',pika:'pika_h3_flex_turbo_2step_draft_ref2va.safetensors',extra:{references:[{kind:'image',alias:'hero'}]},assets:{hero:'hero.png'}},
+ ];
+ for(const tc of cases)for(const action of ['pika','lora']){
+  const spec=C.normalizeSelection({mode:tc.mode,model_profile:tc.profile,
+   loras:[{name:combat,enabled:true,strength:0.85},{name:tc.pika,enabled:true,strength:1}],
+   ...tc.extra},action,supported);
+  assert.ok(spec.loras.every(l=>l.enabled),`${tc.mode}/${tc.profile}/${action} keeps both Pika and Combat V2 enabled`);
+  spec.loras=C.activeLorasInModelOrder(spec.loras);
+  const graph=buildGraph(spec,tc.assets,supported);
+  assert.deepEqual(graph['50'].inputs,{model:['1',0],lora_name:tc.pika,strength_model:1});
+  assert.deepEqual(graph['51'].inputs,{model:['50',0],lora_name:combat,strength_model:0.85});
+  assert.deepEqual(graph['2'].inputs.model,['51',0]);
+  assert.equal(graph['8'].inputs.steps,C.pikaVariant(tc.pika).steps);
+ }
+});

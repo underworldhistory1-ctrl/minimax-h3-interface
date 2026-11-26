@@ -30,3 +30,28 @@ class PikaTests(unittest.TestCase):
         with self.assertRaises(ValueError):validate_configuration(spec,{})
         spec=self.spec(name,steps,family);spec['workflow']['13']['inputs']['samples']=['51',0]
         with self.assertRaises(ValueError):validate_configuration(spec,{})
+
+    def test_combat_v2_stacks_with_pika_in_text_frames_and_refs(self):
+        import json, subprocess
+        cases = [
+            ('text', 'pika_h3_flex_turbo_8step_hd_fl2va.safetensors', 8, 6, {}, {}),
+            ('frames', 'pika_h3_flex_turbo_4step_fl2va.safetensors', 4, 6, {'frames': {'first': {'filename': 'first.png'}}}, {'first': 'first.png'}),
+            ('refs', 'pika_h3_flex_turbo_8step_hd_ref2va.safetensors', 8, 12, {'references': [{'kind': 'image', 'alias': 'hero'}]}, {'hero': 'hero.png'}),
+        ]
+        script = "const C=require('./web/h3/configuration');const [s,a]=JSON.parse(process.argv[1]);s.loras=C.activeLorasInModelOrder(s.loras);s.workflow=require('./web/h3/graph-builder').buildGraph(s,a,{sampling_options:{samplers:['euler'],schedulers:['simple'],weight_dtypes:['default']}});console.log(JSON.stringify(s));"
+        for mode, pika_name, steps, shift_v, extra, assets in cases:
+            with self.subTest(mode=mode, pika=pika_name):
+                spec = {
+                    'model_profile': 'original',
+                    'mode': mode,
+                    'render_method': 'native',
+                    'steps': steps,
+                    'sampling': {'sampler_name': 'euler', 'scheduler': 'simple', 'cfg': 1, 'denoise': 1, 'shift_video': shift_v, 'shift_audio': 3},
+                    'loras': [
+                        {'name': 'H3_Combat_V2.safetensors', 'enabled': True, 'strength': 0.85},
+                        {'name': pika_name, 'enabled': True, 'strength': 1},
+                    ],
+                    **extra,
+                }
+                built = json.loads(subprocess.check_output(['node', '-e', script, json.dumps([spec, assets])], text=True))
+                validate_configuration(built, {})

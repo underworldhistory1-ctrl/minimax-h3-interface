@@ -37,11 +37,13 @@
   const TURBO='minimax_h3_turbo_v4_step600_ema.safetensors';
   const CHARACTER_SWAP='h3_character_swap_pro4500_1000.safetensors';
   const ANIME_TO_REALISM='Anime2Realsim__H3.safetensors';
+  const COMBAT_V2='H3_Combat_V2.safetensors';
   const SPATIAL_PHYSICS='wushu_spatial_physics_clean_3000_pruned.safetensors';
   const VBVR='H3-Licon-VBVR-I2V.safetensors';
   function isSpatialPhysics(name){return String(name||'').split(/[\\/]/).pop().toLowerCase()===SPATIAL_PHYSICS.toLowerCase();}
   function isVBVR(name){return String(name||'').split(/[\\/]/).pop().toLowerCase()===VBVR.toLowerCase();}
-  function isSecondaryLoRA(name){return isSpatialPhysics(name)||isVBVR(name)||isAnimeToRealism(name)||/Motion[_ -]Repair[_ -]V2/i.test(String(name||''))||/h3-realism-people/i.test(String(name||''));}
+  function isCombatV2(name){return String(name||'').split(/[\\/]/).pop().toLowerCase()===COMBAT_V2.toLowerCase();}
+  function isSecondaryLoRA(name){return isSpatialPhysics(name)||isVBVR(name)||isAnimeToRealism(name)||isCombatV2(name)||/Motion[_ -]Repair[_ -]V2/i.test(String(name||''))||/h3-realism-people/i.test(String(name||''));}
   function isAnimeToRealism(name){return String(name||'').split(/[\\/]/).pop().toLowerCase()===ANIME_TO_REALISM.toLowerCase();}
   function validateAnimeToRealism(spec){
     if(!(spec.loras||[]).some(x=>x.enabled&&isAnimeToRealism(x.name)))return;
@@ -100,7 +102,7 @@
   function pikaProfileCompatible(spec){return (spec.model_profile||'original')==='original'||(spec.model_profile==='singularity'&&spec.mode==='refs'&&String(spec.checkpoint||'').split(/[\\/]/).pop()==='Minimax-h3_Singularity_ref2va_v2_pruned_int8.safetensors');}
   function pikaSampling(variant){return {sampler_name:'euler',scheduler:'simple',cfg:1,denoise:1,shift_video:variant.family==='ref2va'?12:6,shift_audio:3};}
   function loraModeCompatible(name,mode){
-    if(isSpatialPhysics(name)||isVBVR(name))return true;
+    if(isSpatialPhysics(name)||isVBVR(name)||isCombatV2(name))return true;
     const pika=pikaVariant(name);if(pika)return pika.family===(mode==='refs'?'ref2va':'fl2va');
     if(isCharacterSwap(name)||isAnimeToRealism(name))return mode==='refs';
     if(/turbo|lightx2v/i.test(name))return false;
@@ -248,5 +250,5 @@
     }
     return node;
   }
-  return {PIKA,pikaVariant,activeLorasInModelOrder,pikaWorkflow,selectionChanges,pikaPromptWarnings,promptQualityWarnings,preferredCheckpoint,pikaSampling,loraModeCompatible,preservedReference,normalizeSelection,selectionRestrictions,validatePika,TURBO_REF,TURBO,defaults,SPARSE_DEFAULTS,resolveSparseAttention,profiles,resolve,patchOptions,FL,REF,SINGULARITY_V2,CHARACTER_SWAP,isCharacterSwap,preferredCharacterSwap,validateCharacterSwap,ANIME_TO_REALISM,isAnimeToRealism,validateAnimeToRealism,SPATIAL_PHYSICS,isSpatialPhysics,VBVR,isVBVR,isSecondaryLoRA};
+  return {PIKA,pikaVariant,activeLorasInModelOrder,pikaWorkflow,selectionChanges,pikaPromptWarnings,promptQualityWarnings,preferredCheckpoint,pikaSampling,loraModeCompatible,preservedReference,normalizeSelection,selectionRestrictions,validatePika,TURBO_REF,TURBO,defaults,SPARSE_DEFAULTS,resolveSparseAttention,profiles,resolve,patchOptions,FL,REF,SINGULARITY_V2,CHARACTER_SWAP,isCharacterSwap,preferredCharacterSwap,validateCharacterSwap,ANIME_TO_REALISM,isAnimeToRealism,validateAnimeToRealism,COMBAT_V2,isCombatV2,SPATIAL_PHYSICS,isSpatialPhysics,VBVR,isVBVR,isSecondaryLoRA};
 });

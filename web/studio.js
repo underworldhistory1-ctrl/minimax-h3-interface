@@ -471,7 +471,7 @@ function renderLoras() {
   creativeLoras.forEach(item=>{
     const swap=H3Configuration.isCharacterSwap(item.name);
     const anime=H3Configuration.isAnimeToRealism(item.name);
-    const combat=/^H3_Combat_V2\.safetensors$/i.test(item.name);
+    const combat=H3Configuration.isCombatV2(item.name);
     const realism=/^h3-realism-people-t2v-i2v-r2v\.safetensors$/i.test(item.name);
     const managed=item.name===turboName;
     const incompatible=!loraModeCompatible(item.name,state.mode)||!!(H3Configuration.pikaVariant(item.name)&&state.continuation);
@@ -485,7 +485,7 @@ function renderLoras() {
     if(H3Configuration.pikaVariant(item.name)){const note=document.createElement('div');note.className='tip';const p=H3Configuration.pikaVariant(item.name);note.textContent='Pika Flex · '+p.steps+' required steps · '+(p.variant==='draft'?'Draft preview; render finals at 4/8 steps.':p.variant==='lite'?'Lite rank-32: smaller download; compression may affect detail.':'Full adapter.')+' Single pass, strength 1 and sampling are automatic. Original, or explicitly selected Singularity v2 in References. GPU quality/performance needs validation.';row.append(note);}
     if(swap){const note=document.createElement('div');note.className='tip';note.textContent='Experimental · References with your selected checkpoint · initial strength 1.0 · no trigger word. Start with one person in a short continuous shot. Source audio reuse is separate; timing and lip sync are not guaranteed. Other LoRA / control / acceleration combinations have no local GPU validation.';row.append(note);}
     if(anime){const note=document.createElement('div');note.className='tip';note.textContent='LiseTY · trained on Ref2VA · trigger LumiReal. Style prompt presets can enable this adapter, or select it here directly. Strength 1 is a starting value, not a publisher-certified optimum. Can stack with Pika Flex Ref2VA. Output quality with this combination is experimental.';row.append(note);}
-    if(combat||realism){const source=document.createElement("div");source.className="tip";source.textContent=combat?"Creator tested FL2VA only · optional triggers prfight2, prfin1":"All three modes · trigger r34l1sm · 1.0 intended strength";row.append(source);}
+    if(combat||realism){const source=document.createElement("div");source.className="tip";source.textContent=combat?"Can stack with Pika Flex in Text, Frames & References · optional triggers prfight2, prfin1":"All three modes · trigger r34l1sm · 1.0 intended strength";row.append(source);}
     if(combat&&state.mode==="refs"){const warning=document.createElement("div");warning.className="tip";warning.textContent="Experimental with Ref2VA: the creator tested FL2VA only. Appearance, motion and audio may change.";row.append(warning);}
     if(incompatible&&!managed){const warning=document.createElement("div");warning.className="tip error";warning.textContent="This adapter appears to target a different H3 checkpoint.";row.append(warning);}
     if(item.enabled&&!managed){
