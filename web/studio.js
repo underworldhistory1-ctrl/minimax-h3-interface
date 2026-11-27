@@ -358,9 +358,9 @@ function timingConfiguration(w=state.width,h=state.height){
   return {version:2,gpu:state.gpu,runtime:state.timingRuntime||null,attention_backend:state.labCapabilities?.server_attention?.implementation||"unrecorded",model:selectedCheckpoint(),sampling:turboMethod()?{...state.sampling,sampler_name:method()==="turbo_ref"?"euler":"h3_turbo",scheduler:"simple",cfg:1,denoise:1,shift_video:12,shift_audio:3}:state.sampling||{},audio_refinement:state.audioRefinement||{},...(sparseTiming?{sparse_attention:sparseTiming}:{}),model_profile:state.modelProfile||"original",hybrid_preset:state.hybridPreset||"none",node_options:state.nodeOptions||{},mode:state.mode,method:method(),
     width:canvas.width,height:canvas.height,...(newPreset?{output_canvas:{width:w,height:h},sampling_canvas:{width:canvas.width,height:canvas.height}}:{}),frames:Number($("duration").value),steps:Number($("steps").value),fps:24,adapters,...((state.dials||[]).some(d=>d.enabled)?{dials:state.dials.filter(d=>d.enabled)}:{}),
     sampler:selectedPika()?"euler":method()==="turbo_ref"?"euler":method()==="turbo"?"h3_turbo":"res_multistep",scheduler:"simple",cfg:1,denoise:1,
-    references:state.mode==="refs"?orderedRefs().map(timingMedia):state.mode==="frames"?[state.first,state.last].map(x=>x?timingMedia(x):null):[],
+    references:state.mode==="refs"?partitionReferences(state.refs).semanticRefs.map(timingMedia):state.mode==="frames"?[state.first,state.last].map(x=>x?timingMedia(x):null):[],
     reference_detail:state.mode==="refs"?$("refSize").value:null,fit_images:state.mode==="refs"?$("fitImages").checked:null,fit_frames:state.mode==="frames"?$("fitFrames").checked:null,frame_fit:state.mode==="frames"?$("frameFit").value:null,
-    guides:state.guides.map(x=>({...timingMedia(x),frame_idx:x.frame_idx,strength:x.strength??null})),
+    guides:[...(state.mode==="refs"?partitionReferences(state.refs).inlineKeyframes.map(r=>({...timingMedia(r),frame_idx:Math.round(Number(r.keyframeTime??0)*24),strength:null})):[]),...state.guides.map(x=>({...timingMedia(x),frame_idx:x.frame_idx,strength:x.strength??null}))],
     control:state.control?.enabled?{kind:state.control.kind,input_type:state.control.input_type,start_seconds:state.control.start_seconds??0,source_span:state.control.source_span??null,mask_alignment:state.control.mask_alignment??null,model:state.control.model_name??"minimax_h3_fun_controlnet_union_2.0_pruned_int8_convrot.safetensors",strength:state.control.strength,start_percent:state.control.start_percent,end_percent:state.control.end_percent,preprocessor:state.control.preprocessor??null,inputs:Object.fromEntries(Object.entries(state.controlInputs||{}).map(([k,v])=>[k,v?timingMedia(v):null]))}:null,
     continuation:state.continuation?{type:state.continuation.type,context_length:state.continuation.context_length,audio_feather_ticks:state.continuation.audio_feather_ticks,source_model:state.continuation.source_model??null,source_canvas:state.continuation.source_canvas??null}:null,
     preserve_reference_audio:!!state.preserveReferenceAudio,passes:refine?[refinementSettings()]:[]};
@@ -378,7 +378,7 @@ function captureSettings(){
     references:refs?state.refs.map(ref=>({name:"@"+ref.alias,type:ref.kind,use_as:ref.role,
       file:ref.file.name,asset_id:ref.assetId||null,thumbnail:H3StudioUX.captureThumbnail(ref),video_soundtrack:!!ref.useAudio,
       trim:(ref.kind==="video"||ref.kind==="audio")&&ref.trimEnabled?{start:Number(ref.trimStart),duration:Number(ref.trimDuration)}:null,
-      subject_group:ref.subject_group||"",instruction:ref.instruction||"",...(ref.role==="storyboard"?{panel_order:ref.panelOrder||"",storyboard_mode:ref.storyboardMode??"auto",storyboard_group:ref.storyboardGroup||""}:{}),use_original_resolution:ref.useOriginalResolution===true,
+      subject_group:ref.subject_group||"",instruction:ref.instruction||"",...(ref.role==="storyboard"?{panel_order:ref.panelOrder||"",storyboard_mode:ref.storyboardMode??"auto",storyboard_group:ref.storyboardGroup||""}:{}),...(ref.role==="keyframe"?{keyframeTime:Number(ref.keyframeTime??0)}:{}),use_original_resolution:ref.useOriginalResolution===true,
       auto_fit:ref.kind==="video"?ref.fitVideo!==false:ref.kind==="image"?H3ReferencePolicy.imageResize(ref,$("fitImages").checked):null})):[],
     start_frame:state.mode==="frames"?state.first?.file.name||null:null,
     end_frame:state.mode==="frames"?state.last?.file.name||null:null,
@@ -546,7 +546,7 @@ async function loadLoras(){
 }
 $("refreshLoras").onclick=loadLoras;
 ["steps","refSize"].forEach(id => $(id).addEventListener("change",renderEstimates));
-$("durationSeconds").addEventListener("input",()=>{if(syncDuration())renderEstimates();saveDraft();});
+$("durationSeconds").addEventListener("input",()=>{if(syncDuration()){renderEstimates();if(typeof renderContinuation==="function")renderContinuation();if(state.refs.some(r=>r.role==="keyframe")&&!document.activeElement?.classList?.contains("ref-keyframe-time"))renderRefs();}saveDraft();});
 $("steps").addEventListener("input",()=>{renderMethodInfo();const value=Number($("steps").value);if(Number.isInteger(value)&&value>=Number($("steps").min)&&value<=Number($("steps").max))renderEstimates();else $("estimateNote").textContent="Enter "+$("steps").min+"–"+$("steps").max+" steps to update the estimate.";});
 $("renderMethod").addEventListener("change",()=>{if(method()==="turbo_ref"){$("steps").value="8";$("refSize").value="match";}else if(method()==="turbo")$("steps").value="6";else if(Number($("steps").value)<8)$("steps").value="20";applySelection('method');renderMethodInfo();renderLoras();renderEstimates();saveDraft();});
 document.querySelectorAll("#stepPresets button").forEach(button=>button.onclick=()=>{$("steps").value=button.dataset.steps;renderMethodInfo();renderEstimates();saveDraft();});
@@ -621,7 +621,7 @@ function fitReferenceTrim(ref) {
   return true;
 }
 function videoReferenceDuration() {
-  const videos=state.refs.filter(ref=>ref.kind==="video");
+  const videos=state.refs.filter(ref=>ref.kind==="video"&&ref.role!=="keyframe");
   const known=videos.map(ref=>Number(ref.trimEnabled?ref.trimDuration:ref.meta?.duration||ref.localDuration));
   return videos.length&&known.every(value=>Number.isFinite(value)&&value>0)
     ?known.reduce((sum,value)=>sum+value,0):null;
@@ -629,8 +629,8 @@ function videoReferenceDuration() {
 function updateRefDurationNotice() {
   const notice=$("refDurationNotice");
   const total=videoReferenceDuration();
-  const count=state.refs.filter(ref=>ref.kind==="video").length;
-  const audio=state.refs.filter(ref=>ref.kind==="audio");
+  const count=state.refs.filter(ref=>ref.kind==="video"&&ref.role!=="keyframe").length;
+  const audio=state.refs.filter(ref=>ref.kind==="audio"&&ref.role!=="keyframe");
   const audioKnown=audio.map(ref=>Number(ref.trimEnabled?ref.trimDuration:ref.meta?.duration||ref.localDuration));
   const audioTotal=audio.length&&audioKnown.every(value=>Number.isFinite(value)&&value>0)?audioKnown.reduce((sum,value)=>sum+value,0):null;
   if(!count&&!audio.length){notice.textContent="";return;}
@@ -695,11 +695,14 @@ function removeShotReference(ref){
 function renderRefs() {
   for(const card of $('refs').querySelectorAll('details.ref'))if(card._reference&&!!card._reference.expanded===card._expandedAtRender)card._reference.expanded=card.open;
   state.refs=orderedRefs();
+  const {semanticRefs,promotedAnchor}=partitionReferences(state.refs);
+  const semanticImages=semanticRefs.filter(r=>r.kind==="image");
   const locked=state.busy||state.projectLoading||(typeof referenceMutationLocked==='function'&&referenceMutationLocked());
   H3ReferenceControls.cleanup($("refs"));
   $("refs").replaceChildren();
   state.refs.forEach((ref,index) => {
     if(ref.restoreError){const missing=missingInputCard(ref,()=>removeShotReference(ref));missing.dataset.referenceIndex=String(index);missing.classList.add('reference-unit');$("refs").append(missing);return;}
+    const isKeyframe=ref.role==="keyframe";
     const card=document.createElement("details");card.className="ref compact-ref";card._reference=ref;card.open=!!ref.expanded;card._expandedAtRender=card.open;card.ontoggle=()=>{if(!card.isConnected)return;ref.expanded=card.open;card._expandedAtRender=card.open;if(card.open){const large=card.querySelector(".ref-expanded-preview");if(large&&!large.src)large.src=ref.previewUrl;}};
     card.dataset.referenceIndex=String(index);const head=document.createElement("summary");head.className="refhead";
     const icon=document.createElement("div");icon.className="icon";
@@ -717,7 +720,18 @@ function renderRefs() {
       preview.onerror=()=>{icon.textContent=ref.kind==="video"?"▶":"I";};
       icon.append(preview);
     }else icon.textContent=ref.kind==="audio"?"♫":ref.kind==="video"?"▶":"I";
-    const title=document.createElement("strong");title.textContent="@"+ref.alias+(ref.kind==="image"?" · Picture "+(state.refs.filter(r=>r.kind==="image").indexOf(ref)+1):"")+(ref.label&&ref.label!==ref.alias?" ("+ref.label+")":"")+" · "+ref.role;
+    const title=document.createElement("strong");
+    const picPos=semanticImages.indexOf(ref);
+    let kfBadge=null;
+    if(isKeyframe){
+      title.textContent="@"+ref.alias+(ref.label&&ref.label!==ref.alias?" ("+ref.label+")":"");
+      kfBadge=document.createElement("span");kfBadge.className="ref-kf-badge";
+      const kfSec=Number(ref.keyframeTime??0);
+      kfBadge.textContent=(ref.kind==="audio"?"Timed audio":ref.kind==="video"?"Timed video":"Keyframe")+" · "+(Number.isFinite(kfSec)?kfSec.toFixed(2):"?")+"s";
+      title.append(kfBadge);
+    }else{
+      title.textContent="@"+ref.alias+(ref.kind==="image"&&picPos>=0?" · Picture "+(picPos+1):"")+(ref.label&&ref.label!==ref.alias?" ("+ref.label+")":"")+" · "+ref.role;
+    }
     const remove=document.createElement("button");remove.className="button alt smallbtn";remove.textContent="Remove";remove.disabled=locked;
     remove.onclick=()=>{removeShotReference(ref);};
     const replace=document.createElement("button");replace.type="button";replace.className="button alt smallbtn ref-replace";replace.textContent="Replace";replace.disabled=locked;replace.hidden=ref.kind!=="image";replace.title="Replace this shot image and keep its name and position";replace.onclick=event=>{event.preventDefault();event.stopPropagation();requestReferenceReplacement(ref);};
@@ -749,16 +763,57 @@ function renderRefs() {
     nameWrap.append(nameLabel,name);
     const roleWrap=document.createElement("div"),roleLabel=document.createElement("label"),role=document.createElement("select");
     roleLabel.textContent="USE AS";
+    const caps=state.labCapabilities||{};
+    const kfDisabled=ref.kind==="audio"?(caps.add_guide===false||caps.guide_audio===false):ref.kind==="video"?(caps.add_guide===false||caps.guide_video===false):(caps.add_guide===false);
     const options=ref.kind==="image"?
-      [["character identity","Character"],["custom","Custom — describe in prompt"],["storyboard","Storyboard · shot guide"],["spatial plan","Spatial plan · experimental"],["location","Location"],["visual style","Style"],["object","Object"]]:
-      ref.kind==="video"?[["motion","Motion"],["custom","Custom — describe in prompt"],["motion and camera","Performance + camera + timing"],["camera movement","Camera"],["action","Action"],["whole scene","Whole scene · guided remake"]]:
-      [["voice","Voice"],["custom","Custom — describe in prompt"],["music","Music"],["sound effects","Effects"]];
-    options.forEach(([value,label])=>{const o=document.createElement("option");o.value=value;o.textContent=label;role.append(o);});
+      [["character identity","Character"],["keyframe","Keyframe · timed frame"],["custom","Custom — describe in prompt"],["storyboard","Storyboard · shot guide"],["spatial plan","Spatial plan · experimental"],["location","Location"],["visual style","Style"],["object","Object"]]:
+      ref.kind==="video"?[["motion","Motion"],["keyframe","Timed video · at timestamp"],["custom","Custom — describe in prompt"],["motion and camera","Performance + camera + timing"],["camera movement","Camera"],["action","Action"],["whole scene","Whole scene · guided remake"]]:
+      [["voice","Voice"],["keyframe","Timed audio · at timestamp"],["custom","Custom — describe in prompt"],["music","Music"],["sound effects","Effects"]];
+    options.forEach(([value,label])=>{const o=document.createElement("option");o.value=value;o.textContent=label;if(value==="keyframe"&&kfDisabled&&ref.role!=="keyframe")o.disabled=true;role.append(o);});
     role.value=ref.role||options[0][0];
     role.disabled=locked;
-    role.onchange=()=>{if(ref.role!==role.value)ref.subject_group="";ref.role=role.value;saveDraft();renderRefs();updatePreviewLive();};
+    role.onchange=()=>{
+      if(ref.role!==role.value){ref.subject_group="";ref.storyboardGroup="";}
+      ref.role=role.value;
+      if(ref.role==="keyframe"){
+        if(ref.keyframeTime===undefined||ref.keyframeTime===null||!Number.isFinite(Number(ref.keyframeTime)))ref.keyframeTime=0;
+        if(ref.kind==="image"&&(!ref.imageFit||ref.imageFit==="preserve")){ref.imageFit="crop";updateRefFitPreview(ref).catch(()=>{});}
+        ref.expanded=true;
+      }
+      saveDraft();renderRefs();renderEstimates();updatePreviewLive();
+    };
     roleWrap.append(roleLabel,role);fields.append(nameWrap,roleWrap);
     card.append(head,meta,fields);
+    if(isKeyframe){
+      const kfBox=document.createElement("div");kfBox.className="ref-keyframe-box";
+      const kfLabel=document.createElement("label");kfLabel.textContent=state.continuation?"AT TIME IN NEW CONTENT (s)":"AT TIME (s)";
+      const kfRow=document.createElement("div");kfRow.className="ref-keyframe-row";
+      const kfInput=document.createElement("input");kfInput.type="number";kfInput.className="ref-keyframe-time";kfInput.min="0";kfInput.step="0.1";kfInput.setAttribute("aria-label","Keyframe timestamp in seconds for @"+ref.alias);
+      kfInput.value=String(Number.isFinite(Number(ref.keyframeTime??0))?Number(ref.keyframeTime??0):0);kfInput.disabled=locked;
+      const kfReadout=document.createElement("div");kfReadout.className="tip";kfReadout.style.marginTop="5px";
+      const syncKfReadout=()=>{
+        const infoObj=keyframeReadoutText(ref);
+        kfReadout.textContent=infoObj.text;kfReadout.style.color=infoObj.bad?"var(--bad)":"";
+        if(kfBadge){const s=Number(ref.keyframeTime??0);kfBadge.textContent=(ref.kind==="audio"?"Timed audio":ref.kind==="video"?"Timed video":"Keyframe")+" · "+(Number.isFinite(s)?s.toFixed(2):"?")+"s";}
+      };
+      const setKfTime=val=>{
+        ref.keyframeTime=val;kfInput.value=String(val);syncKfReadout();saveDraft();updatePreviewLive();
+      };
+      kfInput.oninput=()=>{
+        ref.keyframeTime=kfInput.value===""?NaN:Number(kfInput.value);
+        syncKfReadout();saveDraft();updatePreviewLive();
+      };
+      const startBtn=document.createElement("button");startBtn.type="button";startBtn.className="button alt smallbtn";startBtn.textContent="Start (0s)";startBtn.disabled=locked;startBtn.onclick=()=>setKfTime(0);
+      const midBtn=document.createElement("button");midBtn.type="button";midBtn.className="button alt smallbtn";midBtn.textContent="Mid";midBtn.disabled=locked;midBtn.onclick=()=>setKfTime(Math.floor(((maxKeyframeFrames()-1)/2/24)*100)/100);
+      kfRow.append(kfInput,startBtn,midBtn);
+      if(ref.kind==="image"){
+        const endBtn=document.createElement("button");endBtn.type="button";endBtn.className="button alt smallbtn";endBtn.textContent="End";endBtn.disabled=locked;endBtn.onclick=()=>setKfTime(Math.floor(((maxKeyframeFrames()-1)/24)*100)/100);
+        kfRow.append(endBtn);
+      }
+      kfBox.append(kfLabel,kfRow,kfReadout);
+      syncKfReadout();
+      card.append(kfBox);
+    }
     if(ref.kind==="image"){
       const large=document.createElement("img");if(card.open)large.src=ref.previewUrl;large.loading="lazy";large.decoding="async";large.alt="Expanded preview of @"+ref.alias;large.className="ref-expanded-preview";card.append(large);
       const label=document.createElement("label"),fit=document.createElement("select");label.textContent="IMAGE FIT";for(const [value,title] of [["preserve","Preserve original proportions"],["crop","Crop to canvas"],["contain","Contain on canvas"]]){const o=document.createElement("option");o.value=value;o.textContent=title;fit.append(o);}fit.value=ref.imageFit||"preserve";fit.disabled=locked;fit.onchange=()=>{ref.imageFit=fit.value;updateRefFitPreview(ref).catch(e=>info(e.message,true));};card.append(label,fit);
@@ -769,7 +824,7 @@ function renderRefs() {
       const label=document.createElement("label"),toggle=document.createElement("input");toggle.type="checkbox";toggle.checked=!!ref.trimEnabled;toggle.disabled=locked;toggle.onchange=()=>{ref.trimEnabled=toggle.checked;fitReferenceTrim(ref);renderRefs();saveDraft();};label.append(toggle,document.createTextNode(" Trim audio range"));card.append(label);
       if(ref.trimEnabled){let useInput;for(const [key,title,min,max] of [["trimStart","Audio start (s)",0,3600],["trimDuration","Use audio (s)",0.2,15]]){const label=document.createElement("label"),input=document.createElement("input");label.textContent=title;input.type="number";input.min=min;input.max=max;input.step=".01";input.value=ref[key]??(key==="trimStart"?0:15);input.disabled=locked;if(key==="trimDuration")useInput=input;input.oninput=()=>{ref[key]=Number(input.value);if(key==="trimStart"&&fitReferenceTrim(ref)&&useInput)useInput.value=ref.trimDuration;card.referencePreview?.update();updateRefDurationNotice();saveDraft();};card.append(label,input);}}
     }
-    const insert=document.createElement("button");insert.type="button";insert.className="button alt smallbtn ref-insert";insert.textContent="Insert @"+ref.alias+" into prompt";insert.title=insert.textContent;insert.disabled=locked;insert.onclick=()=>insertReferenceMention(ref.alias,true);card.append(insert);
+    const insert=document.createElement("button");insert.type="button";insert.className="button alt smallbtn ref-insert";insert.textContent="Insert @"+ref.alias+" into prompt";insert.title=insert.textContent;insert.disabled=locked;insert.hidden=isKeyframe&&ref!==promotedAnchor;insert.onclick=()=>insertReferenceMention(ref.alias,true);card.append(insert);
     if(ref.kind==="video"){
       const trim=document.createElement("div");trim.className="section";
       const trimToggle=document.createElement("label"),toggle=document.createElement("input");toggle.type="checkbox";toggle.checked=!!ref.trimEnabled;toggle.disabled=locked;
@@ -850,11 +905,14 @@ function mentionItems(){
   try{bindings=H3PromptCompiler.compilePrompt(previewSpec).bindings||[];}catch{
     try{bindings=H3PromptCompiler.compilePrompt({...previewSpec,source_prompt:state.refs.map(r=>"@"+r.alias).join(" "),prompt_mode:'guided'}).bindings||[];}catch{}
   }
-  const attached=orderedRefs().map(ref=>{
+  const semanticRefs=typeof partitionReferences==='function'?partitionReferences(state.refs).semanticRefs:orderedRefs();
+  const attached=semanticRefs.map(ref=>{
     const b=bindings.find(b=>b.alias===ref.alias),picture=b?.picture_idx?`<Picture ${b.picture_idx}>`:null;
-    return {alias:ref.alias,kind:ref.kind,previewUrl:ref.previewUrl,group:H3ReferencePolicy.groupKey(ref)&&(b?.subject_idx||b?.storyboard_group)?H3ReferencePolicy.groupKey(ref)+':'+(b.subject_idx||'sequence'):null,nativeTags:b?[...new Set([b.tag,picture,b.paired_audio_tag].filter(Boolean))]:[],tag:b?(picture&&b.subject_idx?picture+' → ':'')+b.tag+(b.paired_audio_tag?' + '+b.paired_audio_tag:''):ref.kind,...referenceDisplay(ref),assetId:ref.assetId};
+    const kfTag=ref.role==="keyframe"?`Keyframe ${Number(ref.keyframeTime??0).toFixed(2)}s`:null;
+    return {alias:ref.alias,kind:ref.kind,previewUrl:ref.previewUrl,group:H3ReferencePolicy.groupKey(ref)&&(b?.subject_idx||b?.storyboard_group)?H3ReferencePolicy.groupKey(ref)+':'+(b.subject_idx||'sequence'):null,nativeTags:b?[...new Set([b.tag,picture,b.paired_audio_tag].filter(Boolean))]:[],tag:kfTag||(b?(picture&&b.subject_idx?picture+' → ':'')+b.tag+(b.paired_audio_tag?' + '+b.paired_audio_tag:''):ref.kind),...referenceDisplay(ref),assetId:ref.assetId};
   });
-  return attached.concat(typeof projectCatalogItems==='function'?projectCatalogItems().filter(item=>!attached.some(ref=>ref.alias===item.alias||(ref.assetId&&ref.assetId===item.assetId))):[]);
+  const attachedAll=orderedRefs();
+  return attached.concat(typeof projectCatalogItems==='function'?projectCatalogItems().filter(item=>!attachedAll.some(ref=>ref.alias===item.alias||(ref.assetId&&ref.assetId===item.assetId))):[]);
 }
 function mentionPreview(item){
   if(!item.previewUrl||item.kind==="audio")return null;
@@ -966,31 +1024,84 @@ $("prompt").addEventListener("blur",()=>{
   if(typeof syncPromptMentionsToReferences==='function')syncPromptMentionsToReferences().catch(error=>info(error.message,true));
 });
 
+function maxKeyframeFrames(){
+  const total=Number($("duration")?.value)||124;
+  const ctx=state.continuation?Number(state.continuation.context_length??39):0;
+  return Math.max(1,total-ctx);
+}
+function partitionReferences(refs=state.refs){
+  const ordered=["image","video","audio"].flatMap(k=>(refs||[]).filter(r=>r.kind===k));
+  const inlineKeyframes=ordered.filter(r=>r.role==="keyframe");
+  let semanticRefs=ordered.filter(r=>r.role!=="keyframe");
+  let promotedAnchor=null;
+  if(inlineKeyframes.length>0&&semanticRefs.length===0){
+    promotedAnchor=inlineKeyframes.find(r=>r.kind==="image")||inlineKeyframes[0];
+    semanticRefs=[promotedAnchor];
+  }
+  return {ordered,semanticRefs,inlineKeyframes,promotedAnchor};
+}
+function inlineKeyframeGuideDescriptor(ref){
+  const sec=Number(ref.keyframeTime??0);
+  const frameIdx=Number.isFinite(sec)?Math.round(sec*24):-1;
+  const base={guide_id:"ref_kf:"+ref.alias,alias:ref.alias,kind:ref.kind||"image",frame_idx:frameIdx,relative_to_new_content:!!state.continuation,filename:ref.file?.name};
+  if(ref.kind==="video"){
+    base.use_audio=!!ref.useAudio;
+    base.fps=ref.meta?.fps??24;
+    const frames=ref.meta?.frame_count??(ref.trimEnabled&&Number(ref.trimDuration)>0?Math.round(Number(ref.trimDuration)*24):ref.localDuration?Math.round(ref.localDuration*24):undefined);
+    if(frames!=null){base.frame_count=frames;base.duration_frames=frames;}
+  }
+  return base;
+}
+function keyframeReadoutText(ref){
+  const maxFrames=maxKeyframeFrames(),maxSec=Math.max(0,(maxFrames-1)/24);
+  const sec=Number(ref.keyframeTime??0),frameIdx=Math.round(sec*24);
+  if(!Number.isFinite(sec)||sec<0||frameIdx<0||frameIdx>=maxFrames){
+    return {bad:true,frameIdx,maxFrames,text:"Enter a time from 0.00 to "+maxSec.toFixed(2)+" s (frame 0–"+(maxFrames-1)+")."};
+  }
+  if(ref.kind==="audio"||ref.kind==="video"){
+    const dur=Number(ref.trimEnabled?ref.trimDuration:(ref.meta?.duration||ref.localDuration||0));
+    if(Number.isFinite(dur)&&dur>0){
+      const span=ref.kind==="audio"?Math.ceil(dur*24):(()=>{const f=ref.meta?.frame_count??Math.round(dur*24);return f<5?1:5+17*Math.floor((f-5)/17);})();
+      if(frameIdx+span>maxFrames)return {bad:true,frameIdx,maxFrames,text:"Clip ("+dur.toFixed(2)+"s) extends past "+(maxFrames/24).toFixed(2)+"s. Move earlier or trim."};
+    }
+  }
+  if(state.continuation){
+    const ctx=Number(state.continuation.context_length??39);
+    return {bad:false,frameIdx,maxFrames,text:"Frame #"+frameIdx+" of new content (→ #"+(frameIdx+ctx)+" total · +"+ctx+"f Extend context)"};
+  }
+  return {bad:false,frameIdx,maxFrames,text:"Frame #"+frameIdx+" of "+maxFrames+" ("+(frameIdx/24).toFixed(2)+"s / "+(maxFrames/24).toFixed(2)+"s)"};
+}
 function currentRenderSpec() {
   const refs = state.mode === "refs";
+  const {semanticRefs,inlineKeyframes,promotedAnchor} = refs ? partitionReferences(state.refs) : {semanticRefs:[],inlineKeyframes:[],promotedAnchor:null};
   return {
     dials:state.dials||[],
     model_profile: state.modelProfile||"original", checkpoint:state.checkpoint,hybrid_preset:state.hybridPreset||"none",sampling:turboMethod()?{...state.sampling,sampler_name:method()==="turbo_ref"?"euler":"h3_turbo",scheduler:"simple",cfg:1,denoise:1,shift_video:12,shift_audio:3}:state.sampling||{},node_options:state.nodeOptions||{},audio_refinement:state.audioRefinement||{},sparse_attention:state.sparseAttention||{},refinement:Object.fromEntries(Object.entries(state.refinement||{}).filter(([k])=>['steps','denoise','cfg','sampler_name','scheduler'].includes(k))),refine_scale:state.refineScale??1.25,
     mode: state.mode,
     prompt_mode: state.promptMode || "guided",
     source_prompt: $("prompt").value.trim(),
-    references: refs ? state.refs.map(r => ({
+    references: refs ? semanticRefs.map(r => {
+      const promoted = r === promotedAnchor;
+      return {
       asset_id: r.assetId || r.alias,
       ...(r.role==="storyboard"?{panel_order:r.panelOrder||"",storyboard_mode:r.storyboardMode??"auto",storyboard_group:r.storyboardGroup||""}:{}),
-      subject_group:r.subject_group??"",
+      subject_group:promoted?"":(r.subject_group??""),
       use_original_resolution:r.useOriginalResolution===true,
       alias: r.alias,
       ...referenceDisplay(r),
       kind: r.kind,
-      role: r.role || (r.kind === "image" ? "character identity" : r.kind === "video" ? "motion" : "voice"),
-      instruction: r.instruction || "",
+      role: promoted ? "custom" : (r.role || (r.kind === "image" ? "character identity" : r.kind === "video" ? "motion" : "voice")),
+      instruction: promoted ? (r.instruction || "Timed keyframe anchor.") : (r.instruction || ""),
       use_audio: !!r.useAudio,
       fps: r.meta?.fps ?? (r.kind === "video" ? 24 : undefined),
       frame_count: r.meta?.frame_count ?? (r.kind === "video" ? (r.localDuration ? Math.round(r.localDuration * 24) : 120) : undefined),
       duration: r.trimEnabled ? Number(r.trimDuration) : r.meta?.duration ?? (r.kind !== "image" ? r.localDuration : undefined),
       file: r.file?.name
-    })) : [],
-    guides: state.guides.map(g=>({...g,file:undefined,filename:g.file?.name,relative_to_new_content:!!state.continuation})),
+    };}) : [],
+    guides: [
+      ...(refs ? inlineKeyframes.map(inlineKeyframeGuideDescriptor) : []),
+      ...state.guides.map(g=>({...g,file:undefined,filename:g.file?.name,relative_to_new_content:!!state.continuation})),
+    ],
     capabilities: state.labCapabilities || {},
     frames: { first: state.mode === "frames" && state.first ? {file:state.first.file?.name} : null,
       last: state.mode === "frames" && state.last ? {file:state.last.file?.name} : null },
@@ -1067,13 +1178,18 @@ function resolvedPrompt() {
   spec.preview_only=state.refs.some(r=>r.kind==="video"&&!r.meta?.frame_count);
   if (!spec.source_prompt) throw Error("Write the scene prompt first.");
   if (state.mode === "refs") {
+    const {semanticRefs,inlineKeyframes}=partitionReferences(state.refs);
     if (!state.refs.length) throw Error("Add at least one reference.");
-    if (state.refs.length > 12) throw Error("H3 accepts at most 12 reference files.");
+    if (semanticRefs.length > 12) throw Error("H3 accepts at most 12 reference files.");
     const videoDuration = videoReferenceDuration();
     if (videoDuration !== null && videoDuration > 15.1)
       throw Error("Video references total " + videoDuration.toFixed(2) + " seconds. H3 allows 15 seconds combined; trim at least " + (videoDuration - 15).toFixed(2) + " seconds and retry.");
-    if (state.refs.filter(ref => ref.kind === "audio").length > 3)
+    if (semanticRefs.filter(ref => ref.kind === "audio").length > 3)
       throw Error("H3 accepts at most three standalone audio references.");
+    for (const kf of inlineKeyframes) {
+      const check = keyframeReadoutText(kf);
+      if (check.bad) throw Error("@" + kf.alias + " keyframe: " + check.text);
+    }
   } else if (state.mode === "frames") {
     if (!state.first && !state.last) throw Error("Add a start frame, an end frame, or both.");
   }
@@ -1087,9 +1203,11 @@ function orderedRefs(){return ["image","video","audio"].flatMap(k=>state.refs.fi
 
 function resolvedRenderSpec(uploads){
   const spec=currentRenderSpec();
-  if(spec.mode==='refs')spec.references=spec.references.map((ref,idx)=>({...ref,filename:uploads.refs?.get(state.refs[idx])??uploads.refs?.get(state.refs.find(r=>r.alias===ref.alias))}));
+  const {semanticRefs,inlineKeyframes}=spec.mode==='refs'?partitionReferences(state.refs):{semanticRefs:[],inlineKeyframes:[]};
+  if(spec.mode==='refs')spec.references=spec.references.map((ref,idx)=>({...ref,filename:uploads.refs?.get(semanticRefs[idx])??uploads.refs?.get(semanticRefs.find(r=>r.alias===ref.alias))}));
   for(const key of ['first','last'])if(spec.frames[key])spec.frames[key]={...spec.frames[key],filename:uploads[key]};
-  spec.guides=spec.guides.map((guide,index)=>({...guide,filename:uploads.guides?.get(state.guides[index])}));
+  const allGuideSources=[...inlineKeyframes,...state.guides];
+  spec.guides=spec.guides.map((guide,index)=>({...guide,filename:uploads.guides?.get(allGuideSources[index])??guide.filename}));
   return spec;
 }
 function graph(prompt,uploads,token) {
@@ -1110,10 +1228,23 @@ function graph(prompt,uploads,token) {
       }
     });
   }
-  if (state.guides && uploads.guides) {
+  const {inlineKeyframes}=state.mode==='refs'?partitionReferences(state.refs):{inlineKeyframes:[]};
+  if ((state.guides?.length || inlineKeyframes.length) && uploads.guides) {
     resolvedAssets.guides=Object.create(null);
+    inlineKeyframes.forEach(r => {
+      const serverFile = uploads.guides.get(r);
+      if (serverFile) {
+        resolvedAssets.guides["ref_kf:" + r.alias] = serverFile;
+        resolvedAssets.guides[r.alias] = serverFile;
+      }
+    });
     state.guides.forEach(g => {
-      resolvedAssets.guides[g.asset_id] = uploads.guides.get(g) || g.filename;
+      const serverFile = uploads.guides.get(g) || g.filename;
+      if (serverFile) {
+        if (g.guide_id) resolvedAssets.guides[g.guide_id] = serverFile;
+        if (g.asset_id) resolvedAssets.guides[g.asset_id] = serverFile;
+        if (g.assetId) resolvedAssets.guides[g.assetId] = serverFile;
+      }
     });
   }
 
@@ -1365,6 +1496,7 @@ async function checkConnection() {
         if(state.refs.some(ref=>ref.kind==="video"))modeNodes.push("LoadVideo","GetVideoComponents","ImageFromBatch");
         if(state.refs.some(ref=>ref.kind==="video"&&ref.useAudio))modeNodes.push("TrimAudioDuration");
         if(state.refs.some(ref=>ref.kind==="audio"))modeNodes.push("LoadAudio");
+        if(state.refs.some(ref=>ref.role==="keyframe"))modeNodes.push("MiniMaxH3AddGuide");
       }
       if(state.loras.some(item=>item.enabled))modeNodes.push("LoraLoaderModelOnly");
       if(method()==="turbo")modeNodes.push("MiniMaxH3TurboLoRA","MiniMaxH3TurboSampler");
@@ -1467,13 +1599,18 @@ async function generate() {
       bitmap.close();
       if(Math.abs(ratio/target-1)>.035)throw Error("The start frame aspect ratio differs from the canvas. H3 stretches the first frame; use a matching image to avoid distortion.");
     }
-    if(state.mode==="refs"&&state.refs.filter(ref=>ref.kind==="audio").length>3)
-      throw Error("H3 accepts at most three standalone audio references.");
     if(state.mode==="refs"){
-      const selected=state.refs.filter(ref=>ref.kind==="audio");
+      const {semanticRefs,inlineKeyframes}=partitionReferences(state.refs);
+      if(semanticRefs.filter(ref=>ref.kind==="audio").length>3)
+        throw Error("H3 accepts at most three standalone audio references.");
+      const selected=semanticRefs.filter(ref=>ref.kind==="audio");
       const lengths=selected.map(ref=>Number(ref.trimEnabled?ref.trimDuration:ref.meta?.duration||ref.localDuration));
       if(lengths.length&&lengths.every(value=>Number.isFinite(value)&&value>0)&&lengths.reduce((sum,value)=>sum+value,0)>15.1)
         throw Error("Standalone audio references exceed 15 seconds combined. Shorten or deselect one before generating.");
+      for(const kf of inlineKeyframes){
+        const check=keyframeReadoutText(kf);
+        if(check.bad)throw Error("@"+kf.alias+" keyframe: "+check.text);
+      }
     }
     for(const ref of (state.mode==='refs'?state.refs:[]).filter(item=>item.kind==="video"||item.kind==="audio")){
       const source=Number(ref.meta?.source_duration||ref.localDuration||0);
@@ -1539,8 +1676,8 @@ async function generate() {
         state.uploads.push(result.filename);saveSession();uploadMessage("Linked server image · "+label,100);ref.uploadProgress=undefined;ref.uploadReady=true;ref.meta=result;renderRefs();
         return {...result,name:result.filename};
       }
-      if(kind==="image" && !isControl && (state.mode==="frames" || label.startsWith("Keyframe"))) file=await fitFrameImage(file,ref?.imageFit||null);
-      if(kind==="image" && !isControl && ref?.imageFit && ref.imageFit!=="preserve")file=await fitFrameImage(file,ref.imageFit);
+      if(kind==="image" && !isControl && (state.mode==="frames" || label.startsWith("Keyframe"))) file=await fitFrameImage(file,ref?.imageFit==="preserve"?"crop":(ref?.imageFit||null));
+      else if(kind==="image" && !isControl && ref?.imageFit && ref.imageFit!=="preserve")file=await fitFrameImage(file,ref.imageFit);
       const options={resize:kind==="image"?(isControl?true:H3ReferencePolicy.imageResize(ref,state.mode==="frames"?$("fitFrames").checked:$("fitImages").checked)):kind==="video"&&ref?.fitVideo!==false,
         trimEnabled:(kind==="video"||kind==="audio")&&!!ref?.trimEnabled,trimStart:ref?.trimStart||0,trimDuration:ref?.trimDuration};
       const result=await uploadOne(file,kind,progress,()=>uploadMessage("Checking "+label+" on the server · converting to 24 fps if needed",100),options);
@@ -1552,18 +1689,33 @@ async function generate() {
       if(state.first)uploads.first=(await sendFile(state.first.file,"image","Start frame",state.first)).name;
       if(state.last)uploads.last=(await sendFile(state.last.file,"image","End frame",state.last)).name;
     }else if(state.mode==="refs"){
+      const {semanticRefs,inlineKeyframes,promotedAnchor}=partitionReferences(state.refs);
+      for(const kf of inlineKeyframes){
+        if(!state.labCapabilities?.add_guide)throw Error("This server has no native H3 AddGuide.");
+        if(kf.kind==="audio"&&state.labCapabilities?.guide_audio!==true)throw Error("Timed audio keyframes are unavailable on this server.");
+        if(kf.kind==="video"&&state.labCapabilities?.guide_video!==true)throw Error("Timed video keyframes are unavailable on this server.");
+        if(kf.kind==="video"&&kf.useAudio&&state.labCapabilities?.guide_audio!==true)throw Error("Timed video audio keyframes are unavailable on this server.");
+      }
       for(const ref of orderedRefs()){
-        const result=await sendFile(ref.file,ref.kind,"@"+ref.alias,ref);
+        const isKf=ref.role==="keyframe";
+        const result=await sendFile(ref.file,ref.kind,isKf?("Keyframe @"+ref.alias):("@"+ref.alias),ref);
         ref.meta=result;
         if(ref.kind==="video"&&result.trim_adjusted){ref.trimDuration=result.trim_duration;renderRefs();saveDraft();}
         if(ref.kind==="video"&&ref.useAudio&&!result.has_audio){
           ref.useAudio=false;renderRefs();
           throw Error("Video @"+ref.alias+" has no soundtrack. Its audio option was turned off; retry to use its picture only.");
         }
-        uploads.refs.set(ref,result.name);
+        if(isKf){
+          const check=keyframeReadoutText(ref);
+          if(check.bad)throw Error("@"+ref.alias+" keyframe: "+check.text);
+          uploads.guides.set(ref,result.name);
+          if(ref===promotedAnchor)uploads.refs.set(ref,result.name);
+        }else{
+          uploads.refs.set(ref,result.name);
+        }
       }
-      const videoDuration=state.refs.filter(ref=>ref.kind==="video").reduce((sum,ref)=>sum+(ref.meta?.duration||0),0);
-      const audioDuration=state.refs.filter(ref=>ref.kind==="audio").reduce((sum,ref)=>sum+(ref.meta?.duration||0),0);
+      const videoDuration=semanticRefs.filter(ref=>ref.kind==="video").reduce((sum,ref)=>sum+(ref.meta?.duration||0),0);
+      const audioDuration=semanticRefs.filter(ref=>ref.kind==="audio").reduce((sum,ref)=>sum+(ref.meta?.duration||0),0);
       if(videoDuration>15.1)throw Error("Combined video references exceed 15 seconds.");
       if(audioDuration>15.1)throw Error("Standalone audio references exceed 15 seconds combined.");
       renderRefs();
