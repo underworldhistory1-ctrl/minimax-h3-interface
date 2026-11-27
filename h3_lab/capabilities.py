@@ -54,6 +54,8 @@ def check_capabilities(folder_paths_module=None, nodes_module=None) -> dict:
     native_status = {name: (name in registered_nodes) for name in required_native}
 
     add_guide_ready = "MiniMaxH3AddGuide" in registered_nodes
+    guide_audio_ready = add_guide_ready and "LoadAudio" in registered_nodes
+    guide_video_ready = add_guide_ready and all(name in registered_nodes for name in ("LoadVideo", "GetVideoComponents"))
 
     continuation_nodes = [
         "MiniMaxH3GeneratedAVMaskedContext",
@@ -192,6 +194,8 @@ def check_capabilities(folder_paths_module=None, nodes_module=None) -> dict:
         "ffmpeg": {"ffmpeg": ffmpeg_ok, "ffprobe": ffprobe_ok},
         "native_nodes": native_status,
         "add_guide": add_guide_ready,
+        "guide_audio": guide_audio_ready,
+        "guide_video": guide_video_ready,
         "guides_ready": add_guide_ready and all(native_status.values()) and bool(base_fl_ready),
         "continuation_nodes": continuation_status,
         "models": models_status,
