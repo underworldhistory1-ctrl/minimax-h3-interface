@@ -192,19 +192,25 @@
     else {input=document.createElement('input');input.type=type==='BOOLEAN'?'checkbox':'number';if(type==='BOOLEAN')input.checked=!!value;else{input.value=value;input.step=limits.step??(type==='INT'?1:0.01);if(limits.min!=null)input.min=limits.min;if(limits.max!=null)input.max=limits.max;}}
     input.dataset.setting=key;input.disabled=state.busy||state.projectLoading;input.onchange=()=>{if(state.busy||state.projectLoading)return;if(input.type==='number'&&!input.checkValidity()){input.reportValidity();input.value=String(value);return;}value=type==='BOOLEAN'?input.checked:Array.isArray(type)?input.value:Number(input.value);onchange(value);changed();};wrap.append(input);parent.append(wrap);
   }
-  let schemaServer=null,liveSchemas={};
+  let schemaServer=null,schemaPromise=null,liveSchemas={};
   async function schemas(){
-    const server=api('');if(schemaServer===server){if(state.labCapabilities)state.labCapabilities.node_schemas=liveSchemas;return;}schemaServer=server;
-    const names=['KSampler','UNETLoader','MiniMaxH3SigmaShift','SpectrumApplyMiniMaxH3','MiniMaxH3MotionCache'];
-    const results=await Promise.allSettled(names.map(async name=>{const r=await fetch(api('/object_info/'+name));if(!r.ok)throw Error(name);return r.json();}));
-    if(api('')!==server){schemaServer=null;return;}
-    state.labCapabilities=state.labCapabilities||{};liveSchemas={};state.labCapabilities.node_schemas=liveSchemas;
-    for(const r of results)if(r.status==='fulfilled')Object.assign(liveSchemas,r.value);
-    if(results.some(r=>r.status==='rejected'))schemaServer=null;
+    const server=api('');
+    if(schemaServer===server&&schemaPromise){await schemaPromise;if(state.labCapabilities)state.labCapabilities.node_schemas=liveSchemas;return;}
+    schemaServer=server;
+    const req=(async()=>{
+      const names=['KSampler','UNETLoader','MiniMaxH3SigmaShift','SpectrumApplyMiniMaxH3','MiniMaxH3MotionCache'];
+      const results=await Promise.allSettled(names.map(async name=>{const r=await fetch(api('/object_info/'+name));if(!r.ok)throw Error(name);return r.json();}));
+      if(api('')!==server){if(schemaServer===server){schemaServer=null;schemaPromise=null;}return;}
+      state.labCapabilities=state.labCapabilities||{};liveSchemas={};state.labCapabilities.node_schemas=liveSchemas;
+      for(const r of results)if(r.status==='fulfilled')Object.assign(liveSchemas,r.value);
+      if(results.some(r=>r.status==='rejected')&&schemaServer===server){schemaServer=null;schemaPromise=null;}
+    })();
+    schemaPromise=req;
+    await req;
   }
   async function refresh(){
     await schemas();
-    const caps=state.labCapabilities||{},profile=state.modelProfile||'singularity';
+    const caps=state.labCapabilities||{},profile=state.modelProfile||'original';
     state.modelProfile=profile;
     renderLoras();
     refreshPhysicsControls();

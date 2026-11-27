@@ -4,8 +4,11 @@ const caps={sampling_options:{samplers:['euler','res_multistep'],schedulers:['si
 for(const [name,p] of Object.entries(C.PIKA))test('Pika graph '+name,()=>{
  const spec={mode:p.family==='ref2va'?'refs':'text',model_profile:'original',steps:p.steps,render_method:'native',loras:[{name,enabled:true,strength:1}],sampling:{sampler_name:'euler',scheduler:'simple',cfg:1,denoise:1,shift_video:p.family==='ref2va'?12:6,shift_audio:3},references:[{kind:'image',alias:'hero'}]};
  const graph=buildGraph(spec,{hero:'hero.png'},caps);assert.equal(graph['8'].inputs.steps,p.steps);assert.equal(graph['2'].inputs.shift_video,spec.sampling.shift_video);assert.equal(graph['50'].inputs.lora_name,name);
- for(const patch of [{steps:20},{mode:spec.mode==='refs'?'text':'refs'},{enable_refine:true},{render_method:'spectrum'},{loras:[...spec.loras,{name:'style.safetensors',enabled:true}]}])assert.throws(()=>buildGraph({...spec,...patch},{hero:'hero.png'},caps),/Pika Flex/);
+ for(const patch of [{steps:20},{mode:spec.mode==='refs'?'text':'refs'},{render_method:'spectrum'},{loras:[...spec.loras,{name:'style.safetensors',enabled:true}]}])assert.throws(()=>buildGraph({...spec,...patch},{hero:'hero.png'},caps),/Pika Flex/);
  assert.throws(()=>buildGraph({...spec,sampling:{...spec.sampling,shift_video:9}},{hero:'hero.png'},caps),/Pika Flex/);
+ const refinedGraph=buildGraph({...spec,enable_refine:true,refine_scale:1.25},{hero:'hero.png'},{...caps,refine_ready:true});
+ assert.ok(Object.values(refinedGraph).some(n=>n.class_type==='MinimaxH3LatentUpscaler3D'));
+ assert.equal(Object.values(refinedGraph).filter(n=>n.class_type==='KSampler').length,2);
 });
 
 test('leaving Pika restores sampling and valid standard steps',()=>{

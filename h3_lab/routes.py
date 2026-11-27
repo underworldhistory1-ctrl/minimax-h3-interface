@@ -601,6 +601,8 @@ def register_lab_routes(app_or_routes, storage_root: str, folder_paths_mod=None,
                 "output_file": relative,
                 "assembly": res
             }, status=201)
+        except ValueError as e:
+            return web.json_response({"error": str(e)}, status=400)
         except Exception as e:
             return web.json_response({"error": str(e)}, status=500)
 

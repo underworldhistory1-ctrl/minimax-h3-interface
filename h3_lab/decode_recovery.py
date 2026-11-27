@@ -30,6 +30,14 @@ def recovery_graph(token, workflow, output_token):
         inputs = node.get('inputs', {})
         if not isinstance(inputs, dict):
             raise ValueError('Invalid recovery node inputs')
+        if node.get('class_type') == 'H3LabTrimAV':
+            trim_ref = inputs.get('trim_frames')
+            if isinstance(trim_ref, list) and len(trim_ref) == 2 and isinstance(trim_ref[0], str) and trim_ref[1] == 1:
+                ctx_node = graph.get(trim_ref[0])
+                if isinstance(ctx_node, dict) and ctx_node.get('class_type') in ('MiniMaxH3ExistingVideoMaskedContext', 'MiniMaxH3GeneratedAVMaskedContext'):
+                    ctx_len = ctx_node.get('inputs', {}).get('context_length')
+                    if isinstance(ctx_len, int) and not isinstance(ctx_len, bool) and ctx_len >= 0:
+                        inputs['trim_frames'] = ctx_len
         visiting.add(key)
         for value in inputs.values():
             if isinstance(value, list) and len(value) == 2 and isinstance(value[0], str) and isinstance(value[1], int):

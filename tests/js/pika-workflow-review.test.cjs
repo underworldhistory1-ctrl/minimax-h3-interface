@@ -30,8 +30,8 @@ test('real adapter handler reports removed choices and keeps reference media int
  vm.runInContext(source.slice(source.indexOf('function preservedSoundtrack()'),source.indexOf('function refreshSelectionAvailability()')),ctx);
  vm.runInContext(source.slice(source.indexOf('function applyAdapterSelection('),source.indexOf('function renderLoras()')),ctx);
  ctx.applyAdapterSelection(pika,true);
- assert.equal(fields.steps.value,'8');assert.equal(style.enabled,false);assert.equal(ctx.state.refs,refs);
- assert.match(fields.selectionChanges.textContent,/Disabled adapters: style/);assert.match(fields.selectionChanges.textContent,/Disabled image refinement/);assert.match(fields.selectionChanges.textContent,/Disabled ControlNet/);assert.match(fields.selectionChanges.textContent,/Disabled audio enhancement/);
+ assert.equal(fields.steps.value,'8');assert.equal(style.enabled,false);assert.equal(ctx.state.refs,refs);assert.equal(fields.enableRefine.checked,true);
+ assert.match(fields.selectionChanges.textContent,/Disabled adapters: style/);assert.match(fields.selectionChanges.textContent,/Disabled ControlNet/);assert.match(fields.selectionChanges.textContent,/Disabled audio enhancement/);
  assert.match(C.pikaWorkflow(ctx.selectionSpec()).title,/8-step HD.*References/);
  ctx.applyAdapterSelection(pika,false);assert.equal(fields.steps.value,'20');assert.equal(C.pikaWorkflow(ctx.selectionSpec()),null);
  ctx.applyAdapterSelection(pika,true);fields.renderMethod.value='spectrum';

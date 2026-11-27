@@ -12,7 +12,10 @@ from .reuse_groups import ReuseGroupsMixin
 def asset_ids(value):
     found = set()
     if isinstance(value, dict):
+        has_server_id = isinstance(value.get('assetId'), str) and bool(value.get('assetId'))
         for key, item in value.items():
+            if key == 'asset_id' and has_server_id:
+                continue
             if (key in ('asset_id', 'assetId') or key.endswith('_asset_id')) and isinstance(item, str) and item:
                 found.add(item)
             else:
@@ -211,11 +214,14 @@ class OrganizationMixin(ReuseGroupsMixin):
         draft = copy.deepcopy((candidate or {}).get('draft'))
         settings = copy.deepcopy((candidate or {}).get('effective_settings', {}))
         if not draft and jobs:
-            for record in jobs.project_jobs(source['project_id'] if source else None):
+            job_candidates = jobs.project_jobs(source['project_id']) if source else (jobs.find_by_output(video.name) if hasattr(jobs, 'find_by_output') else jobs.project_jobs(None))
+            for record in job_candidates:
                 output = record.get('output') or {}
                 if output.get('filename') == video.name:
                     snapshot = record.get('render_spec', {}).get('project_snapshot', {})
                     draft = copy.deepcopy(snapshot.get('draft')); settings = copy.deepcopy(snapshot.get('settings', settings))
+                    if not source and record.get('project_id'):
+                        source = self.get_project(record['project_id'])
                     if draft: break
         warnings = []
         if not draft:
@@ -224,40 +230,57 @@ class OrganizationMixin(ReuseGroupsMixin):
             settings = settings or metadata.get(video.name, {}).get('settings', {})
             if not settings or not settings.get('prompt'):
                 return {'available': False, 'warnings': ['This older video has no saved generation setup. Its inputs cannot be reconstructed safely.']}
-            mode = settings.get('mode', 'text'); canvas = settings.get('output_canvas') or {}
+            mode = settings.get('mode') or 'text'; canvas = settings.get('output_canvas') or {}
             if not canvas:
                 parts = str(settings.get('canvas', '')).replace('×', 'x').split('x')
                 if len(parts) == 2 and all(p.isdigit() for p in parts): canvas = dict(zip(('width', 'height'), map(int, parts)))
-            frames = settings.get('target_frames', settings.get('frames', 362))
+            frames = settings.get('target_frames') or settings.get('frames') or 362
             cfg = settings.get('configuration') or {}
+            timing = settings.get('timingConfiguration') or {}
             recovered_sampling = copy.deepcopy(cfg.get('sampling') or cfg.get('settings') or {})
-            recovered_loras = [{**a,'enabled':True} for a in settings.get('loras',[])]
-            if not recovered_sampling:
-                from .configuration import PIKA
-                pika_hit = next((PIKA[a.get('name')] for a in recovered_loras if a.get('name') in PIKA), None)
-                if pika_hit:
-                    _steps, fam = pika_hit
-                    recovered_sampling = {'sampler_name': 'euler', 'scheduler': 'simple', 'cfg': 1, 'denoise': 1, 'shift_video': 12 if fam == 'ref2va' else 6, 'shift_audio': 3}
+            recovered_loras = [{**a,'enabled':True} for a in (settings.get('loras') or []) if isinstance(a, dict)]
+            from .configuration import PIKA
+            pika_hit = next((PIKA[a.get('name')] for a in recovered_loras if a.get('name') in PIKA), None)
+            if pika_hit:
+                pika_steps, fam = pika_hit
+                pika_defaults = {'sampler_name': 'euler', 'scheduler': 'simple', 'cfg': 1, 'denoise': 1, 'shift_video': 12 if fam == 'ref2va' else 6, 'shift_audio': 3}
+                recovered_sampling = {**pika_defaults, **recovered_sampling}
+            raw_steps = settings.get('steps')
+            steps_val = raw_steps if isinstance(raw_steps, int) and not isinstance(raw_steps, bool) and raw_steps >= 1 else (pika_hit[0] if pika_hit else 20)
+            raw_seed = settings.get('seed')
+            seed_str = str(seed_value(42 if raw_seed is None else raw_seed))
+            render_method = settings.get('render_method') or 'native'
+            profile = cfg.get('profile') or timing.get('model_profile') or 'original'
+            refine_data = settings.get('refine') if isinstance(settings.get('refine'), dict) else None
+            preserve_src = settings.get('preserve_reference_audio') if isinstance(settings.get('preserve_reference_audio'), str) else None
+            preserve_enabled = bool(preserve_src or timing.get('preserve_reference_audio', False))
             draft = {'mode': mode, 'prompts': {mode: settings['prompt']}, 'canvas': canvas or {'width':1280,'height':704},
-                'settings': {'seed': str(seed_value(settings.get('seed', 42))), 'steps': settings.get('steps',20), 'duration': frames,
-                    'durationSeconds': frames/24, 'renderMethod': settings.get('render_method','native'), 'refSize': settings.get('reference_detail') or 'match'},
-                'configuration': {'modelProfile': cfg.get('profile','original'),
-                    'checkpoint': cfg.get('checkpoint'), 'hybridPreset': cfg.get('hybrid_preset') or cfg.get('hybridPreset') or 'none',
-                    'sampling': recovered_sampling, 'dials': copy.deepcopy(cfg.get('dials') or [])},
+                'settings': {'seed': seed_str, 'steps': steps_val, 'duration': frames,
+                    'durationSeconds': frames/24, 'renderMethod': render_method, 'refSize': settings.get('reference_detail') or 'match'},
+                'configuration': {'modelProfile': profile,
+                    'checkpoint': cfg.get('checkpoint') or timing.get('checkpoint'), 'hybridPreset': cfg.get('hybrid_preset') or cfg.get('hybridPreset') or 'none',
+                    'sampling': recovered_sampling, 'nodeOptions': copy.deepcopy(timing.get('node_options') or {}),
+                    'dials': copy.deepcopy(cfg.get('dials') or settings.get('dials') or timing.get('dials') or []),
+                    'refinement': {k: v for k, v in (refine_data or {}).items() if k in ('steps', 'denoise', 'cfg', 'sampler_name', 'scheduler')},
+                    'refineScale': refine_data.get('scale', 1.25) if refine_data else 1.25},
+                'enableRefine': bool(refine_data),
                 'refs': [], 'guides': [], 'loras': recovered_loras, 'preparationMode':'native'}
             for ref in settings.get('references', []):
-                draft['refs'].append({'assetId':ref.get('asset_id'), 'alias':str(ref.get('name','reference')).lstrip('@'),
+                entry = {'assetId':ref.get('asset_id'), 'alias':str(ref.get('name','reference')).lstrip('@'),
                     'kind':ref.get('type','image'), 'role':ref.get('use_as','custom'), 'useAudio':ref.get('video_soundtrack',False),
-                    'trimEnabled':bool(ref.get('trim')), 'trimStart':(ref.get('trim') or {}).get('start',0), 'trimDuration':(ref.get('trim') or {}).get('duration',15)})
+                    'trimEnabled':bool(ref.get('trim')), 'trimStart':(ref.get('trim') or {}).get('start',0), 'trimDuration':(ref.get('trim') or {}).get('duration',15)}
+                for k in ('instruction', 'subject_group', 'panelOrder', 'storyboardMode', 'storyboardGroup', 'useOriginalResolution', 'fitVideo', 'imageFit', 'keyframeTime'):
+                    if k in ref: entry[k] = ref[k]
+                draft['refs'].append(entry)
             for ref in settings.get('frame_references', []):
                 name = 'last' if ref.get('name') == '@end' else 'first'
                 draft[name] = {'assetId':ref.get('asset_id'), 'alias':str(ref.get('name',name)).lstrip('@')}
             warnings.append('Legacy settings recovered. Advanced inputs not recorded in this video must be checked manually.')
-            timing = settings.get('timingConfiguration') or {}
             draft['configuration']['audioRefinement'] = copy.deepcopy(timing.get('audio_refinement') or {})
             draft['configuration']['sparseAttention'] = copy.deepcopy(timing.get('sparse_attention') or {})
-            draft['configuration']['preserveReferenceAudio'] = bool(timing.get('preserve_reference_audio', False))
-            if settings.get('refine') or settings.get('control') or settings.get('continuation') or timing.get('guides') or timing.get('continuation'):
+            draft['configuration']['preserveReferenceAudio'] = preserve_enabled
+            draft['configuration']['preserveAudioSource'] = preserve_src if preserve_enabled else None
+            if settings.get('control') or settings.get('continuation') or timing.get('guides') or timing.get('continuation'):
                 warnings.append('Control/refinement/continuation source data was not saved completely. Reattach and verify before rendering.')
         if draft.get('settings', {}).get('renderMethod') in ('turbo', 'turbo_ref'):
             draft['loras'] = [a for a in draft.get('loras', []) if a.get('name') not in ('minimax_h3_turbo_v4_step600_ema.safetensors','minimax_h3_ref2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors')]

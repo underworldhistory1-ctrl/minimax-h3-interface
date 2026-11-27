@@ -48,7 +48,7 @@ async function workspaceMutation(operation,project=state.currentProject){
       throw Error('This project changed on another device. The catalog has refreshed; try the edit again.');
     }
     throw error;
-  }finally{workspaceCatalogBusy=false;renderProjectCatalog();}
+  }finally{workspaceCatalogBusy=false;renderProjectCatalog();if(typeof refreshLabControls==='function')refreshLabControls();}
 }
 async function saveWorkspaceDraft(){
   if(!projectCtrl?.currentProject)return;
@@ -61,7 +61,7 @@ async function saveWorkspaceDraft(){
   const signature=value=>JSON.stringify(value,(_key,item)=>item&&typeof item==='object'&&!Array.isArray(item)?Object.fromEntries(Object.keys(item).sort().map(key=>[key,item[key]])):item);
   const rootCanvas=projectCtrl.draftScope?.scene_id?{}:{canvas:{width:state.width,height:state.height},fps:24};
   const sameCanvas=projectCtrl.draftScope?.scene_id||(project.canvas?.width===state.width&&project.canvas?.height===state.height);
-  if(allInputItems().every(item=>item.assetId)&&signature(snapshot)===signature(saved)&&sameCanvas)return;
+  if(allInputItems().every(item=>item.assetId||item.restoreError)&&signature(snapshot)===signature(saved)&&sameCanvas)return;
   const draft=await persistProjectDraft();await projectCtrl.saveCurrentProject({...rootCanvas,draft,assets:mergeProjectAssetDescriptors(projectCtrl.currentProject.assets||[],allInputItems())});
 }
 async function openProjectWorkspace(id,{view='studio'}={}){
@@ -135,7 +135,7 @@ async function activateProjectAsset(item,options={}){
     if(state.refs.some(ref=>ref.assetId===item.assetId||ref.alias.toLocaleLowerCase()===shotAlias.toLocaleLowerCase()))throw Error('Element is already attached or its alias is in use.');
     // Readiness gates apply before committing a reference, including selected checkpoint compatibility.
     selectMode('refs');if(state.mode!=='refs')throw Error('References mode is unavailable on this server.');
-    if(checkPromptUnchanged&&initialMode!=='refs'){state.prompts.refs=initialPrompt;$('prompt').value=initialPrompt;}
+    if(initialMode!=='refs'){state.prompts.refs=initialPrompt;$('prompt').value=initialPrompt;}
     url=URL.createObjectURL(blob);
     const videoMeta=record?.metadata||item.metadata||{};
     const ref={assetId:item.assetId,file:new File([blob],record.original_name||shotAlias,{type:blob.type}),kind:item.kind,alias:shotAlias,
@@ -164,7 +164,7 @@ async function activateProjectAsset(item,options={}){
       };
     }
     state.refs.push(ref);url=null;renderRefs();renderEstimates();saveDraft();return ref;
-  }finally{if(url)URL.revokeObjectURL(url);workspaceCatalogBusy=false;renderProjectCatalog();}
+  }finally{if(url)URL.revokeObjectURL(url);workspaceCatalogBusy=false;renderProjectCatalog();if(typeof refreshLabControls==='function')refreshLabControls();}
 }
 let syncMentionsTimer=null,syncMentionsPending=null;
 function cancelQueuedPromptMentionSync(){clearTimeout(syncMentionsTimer);syncMentionsTimer=null;}
@@ -175,8 +175,10 @@ function syncPromptMentionsToReferences(){
   syncMentionsPending=(async()=>{
     const dismissed=state.dismissedCatalogAssets instanceof Set?state.dismissedCatalogAssets:new Set(state.dismissedCatalogAssets||[]);
     const attachedIds=new Set(state.refs.map(ref=>ref.assetId));
+    const frameIds=state.mode==='frames'?new Set([state.first?.assetId,state.last?.assetId].filter(Boolean)):new Set();
     const attachedAliases=new Set(state.refs.map(ref=>ref.alias.toLocaleLowerCase()));
-    const catalog=projectCatalogItems().filter(ref=>!dismissed.has(ref.assetId)&&!attachedIds.has(ref.assetId)&&!attachedAliases.has(ref.alias.toLocaleLowerCase()));
+    if(state.mode==='frames'){attachedAliases.add('start');attachedAliases.add('end');}
+    const catalog=projectCatalogItems().filter(ref=>!dismissed.has(ref.assetId)&&!attachedIds.has(ref.assetId)&&!frameIds.has(ref.assetId)&&!attachedAliases.has(ref.alias.toLocaleLowerCase()));
     const rawPrompt=$('prompt').value||'';
     let text=rawPrompt;
     try{
@@ -214,7 +216,7 @@ async function insertProjectMention(item,range=null){
   let name=ref.alias;
   try{if(H3PromptCompiler.normalizeReferenceMentions(token,catalog.length?catalog:[ref])==='@'+ref.alias)name=preferred;}catch{}
   input.setRangeText('@'+name+' ',Math.min(start,input.value.length),Math.min(end,input.value.length),'end');
-  $('mentionMenu').classList.add('hidden');H3StudioUX.revealControl(input);input.focus();renderPromptAssets();saveDraft();
+  $('mentionMenu').classList.add('hidden');H3StudioUX.revealControl(input);input.focus();renderPromptAssets();if(typeof updatePreviewLive==='function')updatePreviewLive();saveDraft();
 }
 function refreshProjectHubControls(){
   const locked=workspaceLocked();
@@ -509,7 +511,7 @@ function initProjectWorkspace(){
           if(controller===projectCtrl&&pid===state.activeProjectId){controller.currentProject=updated;updateProjectUI(updated);}
         }
       }catch(error){$('assetUploadStatus').textContent='Files may be saved; catalog refresh failed: '+error.message;}
-      finally{workspaceCatalogBusy=false;renderProjectCatalog();}
+      finally{workspaceCatalogBusy=false;renderProjectCatalog();if(typeof refreshLabControls==='function')refreshLabControls();}
     }
   };
   $('projectAssetFiles').onchange=()=>uploadCatalogFiles([...$('projectAssetFiles').files]);

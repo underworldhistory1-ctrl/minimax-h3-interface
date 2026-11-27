@@ -196,6 +196,7 @@ function applySelection(action,before=null){
   state.preserveReferenceAudio=!!next.preserve_reference_audio;if(!state.preserveReferenceAudio)state.preserveAudioSource=null;
   if(previous.model_profile!==next.model_profile){state.checkpoint=H3Configuration.preferredCheckpoint(next.model_profile,state.labCapabilities||{});}
   $('renderMethod').value=next.render_method;$('steps').value=String(next.steps);$('enableRefine').checked=!!next.enable_refine;
+  if($('refinePresetInfo')?.style)$('refinePresetInfo').style.display=$('enableRefine').checked?'block':'none';
   if($('enableControl'))$('enableControl').checked=!!state.control.enabled;
   if(!selectedPika()&&Number($('steps').value)<8&&!turboMethod())restorePikaSampling();
   if(action!=='reset'&&(previous.model_profile!==next.model_profile||previous.render_method!==next.render_method||previous.enable_refine!==next.enable_refine||previous.control?.enabled!==next.control?.enabled||previous.audio_refinement?.enabled!==next.audio_refinement?.enabled||previous.sparse_attention?.enabled!==next.sparse_attention?.enabled))info('Workflow updated automatically for this selection. Review the displayed model, steps and passes.');
@@ -208,6 +209,14 @@ function refreshSelectionAvailability(){
   const spec=selectionSpec(),rules=H3Configuration.selectionRestrictions(spec),caps=state.labCapabilities||{};
   for(const [id,reason,ready] of [['enableRefine',rules.refine,caps.refine_ready],['enableControl',rules.control,caps.controlnet_ready],['enhanceAudio',rules.audio,caps.audio_refine_ready],['enableSparseAttention',rules.sparse,caps.sparse_attention_ready]]){
     const field=$(id);if(field){field.disabled=!!state.busy||!!state.projectLoading||(id==='enhanceAudio'&&!!state.preserveReferenceAudio)||(!ready||!!reason)&&!field.checked;field.title=reason||(!ready?'Required runtime or model is unavailable.':'');}
+  }
+  const refineInfo=$('refinePresetInfo');
+  if(refineInfo?.style&&$('enableRefine')){
+    const on=!!$('enableRefine').checked;refineInfo.style.display=on?'block':'none';
+    if(on){
+      const rs=refinementSettings();
+      refineInfo.innerHTML='<strong>Quality Refine preset active</strong><br>'+Number(rs.scale??1.25).toFixed(2)+'× latent upscale · '+rs.steps+'-step '+rs.sampler_name+' · denoise '+Number(rs.denoise).toFixed(2)+'. Motion Repair uses strength 0.25 in this pass.';
+    }
   }
   $('steps').disabled=!!state.busy||!!state.projectLoading||!!selectedPika()||method()==='turbo_ref';
   let issue='';try{if(!methodAvailable(method()))throw Error('The selected render method is unavailable for this model/input.');H3Configuration.resolve({...currentRenderSpec(),...spec},caps);}catch(error){issue=error.message;}
@@ -546,9 +555,11 @@ $("randomSeed").onclick = () => {$("seed").value = H3RenderValues.randomSeed();s
 const refineEl = $("enableRefine");
 if (refineEl) {
   refineEl.addEventListener("change", () => {
-    const info = $("refinePresetInfo");
-    if (info) info.style.display = refineEl.checked ? "block" : "none";
+    const infoEl = $("refinePresetInfo");
+    if (infoEl) infoEl.style.display = refineEl.checked ? "block" : "none";
     refreshSelectionAvailability();
+    renderEstimates();
+    if (window.H3ConfigurationUI) H3ConfigurationUI.refresh();
     saveDraft();
   });
 }
@@ -959,7 +970,7 @@ function currentRenderSpec() {
   const refs = state.mode === "refs";
   return {
     dials:state.dials||[],
-    model_profile: state.modelProfile||"original", checkpoint:state.checkpoint,hybrid_preset:state.hybridPreset||"none",sampling:turboMethod()?{...state.sampling,sampler_name:method()==="turbo_ref"?"euler":"h3_turbo",scheduler:"simple",cfg:1,denoise:1,shift_video:12,shift_audio:3}:state.sampling||{},node_options:state.nodeOptions||{},audio_refinement:state.audioRefinement||{},sparse_attention:state.sparseAttention||{},refinement:state.refinement||{},refine_scale:state.refineScale??1.25,
+    model_profile: state.modelProfile||"original", checkpoint:state.checkpoint,hybrid_preset:state.hybridPreset||"none",sampling:turboMethod()?{...state.sampling,sampler_name:method()==="turbo_ref"?"euler":"h3_turbo",scheduler:"simple",cfg:1,denoise:1,shift_video:12,shift_audio:3}:state.sampling||{},node_options:state.nodeOptions||{},audio_refinement:state.audioRefinement||{},sparse_attention:state.sparseAttention||{},refinement:Object.fromEntries(Object.entries(state.refinement||{}).filter(([k])=>['steps','denoise','cfg','sampler_name','scheduler'].includes(k))),refine_scale:state.refineScale??1.25,
     mode: state.mode,
     prompt_mode: state.promptMode || "guided",
     source_prompt: $("prompt").value.trim(),

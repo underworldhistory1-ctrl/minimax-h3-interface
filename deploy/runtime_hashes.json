@@ -660,7 +660,8 @@
     "a7b50d7389c9beecfc1004f532f2262ff7bbd10e",
     "876c6726bd55bf62b6a9232a15bb58122a199cd4",
     "a9e731c1dfbf32faa66be5d1e005a48cc0f8274a",
-    "094b5fba856ae6be085c504aa3295e92cd405411"
+    "094b5fba856ae6be085c504aa3295e92cd405411",
+    "21c2069b6b3d4b0355ece3d756a0f5bd60fa2c65"
   ],
   "deploy/runtime_patches.py": [
     "0fdc101b492faeb3d902f9d268074d0f25bf5331",
@@ -1539,14 +1540,16 @@
     "0540443e9156593814e2f55e3964164f96019efb",
     "852063a6365f8f3e905bbea2dec4e11c4541deff",
     "d48d6a74b19217d3ad771bd5f047ce4b361b1765",
-    "a3f90bf1a218485d207e880d12e8269b017808cd"
+    "a3f90bf1a218485d207e880d12e8269b017808cd",
+    "dd9bf65789002e9d89b22f6e9e5c71c9cbaaca7a"
   ],
   "h3_lab/assembly.py": [
     "6ada7e9561360b7ecd118fb50e518213380ad4dd",
     "79475d27cf0e4f772f5f3c7cb05b489de4a39804",
     "7aa4b2cf85e0f63577d968878709b7b9ee411bca",
     "982133fe51ee0f696e548f67a16eca0c34c04286",
-    "cf891cd794e15aa190afe5c226fad52c21fc9479"
+    "cf891cd794e15aa190afe5c226fad52c21fc9479",
+    "cb54e2b90ac0aaef9106f9b30ce095f933dfad42"
   ],
   "h3_lab/assets.py": [
     "061e8879a898620629ce903fe52402b964c19365",
@@ -1593,7 +1596,8 @@
     "bdc5617710df91a63b57f60e251e0feddada61f8",
     "d008fa47b21673d2881881cc82ddfcf9b0a06c27",
     "ea2426ab2806960dc07ef2919eca8ee76179ffa9",
-    "e59019ce16accf7992d75088f3ca806ab23a2142"
+    "e59019ce16accf7992d75088f3ca806ab23a2142",
+    "02373e6d5b9b6e5ab9b2824a65a0b281ea678212"
   ],
   "h3_lab/contexts.py": [
     "c062ed0ec192e13dae58a3382c0b877a46531b2c",
@@ -1621,7 +1625,8 @@
   ],
   "h3_lab/decode_recovery.py": [
     "70fc33ef13035b02cf5551ea29d4608ba91e3ad7",
-    "c1124ea3576c90e0fc6bb28ce1efcb2201ecccc9"
+    "c1124ea3576c90e0fc6bb28ce1efcb2201ecccc9",
+    "96c86fd9c9e9c95f3478636acdc4b6dee8b8fcae"
   ],
   "h3_lab/execution_inputs.py": [
     "fd2a56d6ba65e53e0a5a1be2305311a68b11e963",
@@ -1648,7 +1653,8 @@
     "935968fe91b2e85b626cdc538d8166bab7245708",
     "a1893a39fef0fef5e256b8b839fe7750186897fa",
     "f9bd0e443063260d62669c8e5c13987c0d867df6",
-    "fb324184ac230b83ca7b4fc7406a3bf084d41c4e"
+    "fb324184ac230b83ca7b4fc7406a3bf084d41c4e",
+    "c2ad3dd689f68942dc1b9bc7d4317fb74f4b3a62"
   ],
   "h3_lab/media_export.py": [
     "324fb1aff0dbc251db4a180556f7ee0556f9eda1",
@@ -1672,7 +1678,8 @@
     "a169a85f42ff65a26fb5ea5592e44cdbb49972d3",
     "ebcc038dc84847d57c3c362545f31b489a3db8b8",
     "faf2d84d2b662fe969943ebaabcddfc789dc908a",
-    "26743857880a512f9674d06bd6e9d00127878d9b"
+    "26743857880a512f9674d06bd6e9d00127878d9b",
+    "0782405b83f0eb15107340d48f291b64c7da8a3b"
   ],
   "h3_lab/paths.py": [
     "957ebc6a9e8e20d3c47be9d8b6a23385dc4395ef",
@@ -1695,7 +1702,8 @@
     "9c03e8be55f1bb205dd0d56e9ee01135a7e531ab",
     "a3aa2b23b09759729e528b0aa2d78d1084af0b76",
     "ad3d7575d32e0d95cfd0050c7a40328d0e922967",
-    "bf659968e4d435a70d593e1a1411835d3aa95db2"
+    "bf659968e4d435a70d593e1a1411835d3aa95db2",
+    "76af184a63830c8aeb61e840e8ed25c96f3497db"
   ],
   "h3_lab/prompt_context.py": [
     "26a0794bb6f762c333814505927befacc072b3cf",
@@ -1757,7 +1765,8 @@
     "ef4ad7e98008b89af15a004dad750276264d6339",
     "f67d0c541ec380294ab6cd92e1052ec824ac5ee7",
     "fa5b4de67aefcb541c1f1766262df072e7512345",
-    "fe36fd1212c4bf01f5dcab25f231b63f7487b19e"
+    "fe36fd1212c4bf01f5dcab25f231b63f7487b19e",
+    "768f7f9354169831bea0982e313c5e30a4cdd4e1"
   ],
   "h3_lab/runtime_attention.py": [
     "4aaa6ea6382374f33364daa68d2161ae5a614dfa",
@@ -2036,7 +2045,8 @@
   ],
   "tests/browser/selection-policy.cjs": [
     "36a0b905b0fcb58663c99fbc5f8f4b37d2c345cb",
-    "3fbbbb8d67244d69fc35dc04ee3d71514340213f"
+    "3fbbbb8d67244d69fc35dc04ee3d71514340213f",
+    "75d0769f6454b6ff7e2afd1d2555e6c920e74cf6"
   ],
   "tests/browser/shared-export.cjs": [
     "5c229456b4c50bc966c49bdab95367c388ef3da5",
@@ -2102,7 +2112,8 @@
     "4082ac656baa45df8f99ae2f45b9e5cfe7a5690d",
     "752c1dfd507b4ea846e5770864f0b52be2b41e22",
     "eebaf8eef575cdd745159c2312b7a02b875e3b3c",
-    "f07b21e5678267eb8db2a19c5d5e877c7e3bb657"
+    "f07b21e5678267eb8db2a19c5d5e877c7e3bb657",
+    "49e9e3ebec52c8767e9607a8adebf180ac13fa5b"
   ],
   "tests/e2e/cpu_fixture.py": [
     "353aced26842b67f1da03ae080cd9f9582454152",
@@ -2210,7 +2221,8 @@
     "20d4540f776b87f44e38f6a6ff3601a2406ffd73",
     "698a569498ad86aa2d4024132fb21d6697d73868",
     "8a3bfc581fb867570441c336f6ed90c71688f093",
-    "c38650663c5be3b7913772be4c54d2e40a249fad"
+    "c38650663c5be3b7913772be4c54d2e40a249fad",
+    "a99aa2709ae2d9fdc3cfa1285240bd0d6c676b54"
   ],
   "tests/js/preparation-restore.test.cjs": [
     "25590dfeeb5a3f538ec786674b5105b62800043b",
@@ -2307,7 +2319,8 @@
   ],
   "tests/js/selection-policy.test.cjs": [
     "711777cbdc1f50c4079e9fb5a9cddb39992e88a1",
-    "eaf08f2ae7008cb5697050f737a47bd0e2927d00"
+    "eaf08f2ae7008cb5697050f737a47bd0e2927d00",
+    "5f4dbc9a7084839a552a7cdf795f720c872d13e2"
   ],
   "tests/js/studio-ux.test.cjs": [
     "3620e8e6107112c0ddaba2b033386a98f246b7fa",
@@ -2841,7 +2854,8 @@
     "e9e6e211857fd50a4056a2bdc15f542e14eddf57",
     "fd1b4d3abea0106c7f3988ec635f796e09bff89c",
     "b6319a6c4da47ceb0bc0e849135139b7de2ba988",
-    "454a8102c908446f5bf1335d93b7040cc6685d6a"
+    "454a8102c908446f5bf1335d93b7040cc6685d6a",
+    "fce6c4cd58b34468756fb511a77529380c48c88c"
   ],
   "web/h3/configuration.js": [
     "0113992f558afeeaa3715517f2e033952bcbfa03",
@@ -2862,7 +2876,8 @@
     "cb79a449eeefed299d17d926c822ea2e8711d63a",
     "f2a4333bed26c95dedc4145250fe43af37bf341c",
     "fbd5908d1852f16daa7328c5bb7c14c25865e36e",
-    "6a848cf7d838ba6c8b0bfd7c32a6c04dd40eee8b"
+    "6a848cf7d838ba6c8b0bfd7c32a6c04dd40eee8b",
+    "ef11f03c8afe974acb90d86a89fead7af929ea08"
   ],
   "web/h3/connected-studio.js": [
     "05445d1988f82e0755addcae209c73a03773c2d5",
@@ -2912,7 +2927,8 @@
     "ed1fd555fe20d72f6982c86bd70e5f56796cb244",
     "f985627acb68c4bcbe56026c3080ed823427fc0d",
     "ffbf07309fc97f64f3a3e52b1a5531363c454cd4",
-    "be10d5ed48d24b3583f3b44ececbafdd068e3a85"
+    "be10d5ed48d24b3583f3b44ececbafdd068e3a85",
+    "d0d53a2fb1a634a72f7afc9dface1db9c5d03907"
   ],
   "web/h3/guidance-language.js": [
     "1ee2264c5f9681365f1a8b7d5ffe6667e8b33af5",
@@ -2937,7 +2953,8 @@
     "6af93fb34bea0666b6831ab9265170698b91421f",
     "80762eddd8bdb0d9fac3a286193f9ed97f53e719",
     "872b742c18530be0795623f17c4f9b7deda706bf",
-    "ad241e1d5c33739eb6a378d8827dec1b3557c3a7"
+    "ad241e1d5c33739eb6a378d8827dec1b3557c3a7",
+    "d04cbe42f84e647711f4b16d85fb78b897ec01bd"
   ],
   "web/h3/project-controller.js": [
     "34f5f075a1eb5fca2c61bc09e014712269c395dc",
@@ -2971,7 +2988,8 @@
     "da8d70b640d42ad1da56baeb71edc4d17c1b846e",
     "dd83a9d6c62904ae684e95aaa8c63c7458be9565",
     "e3d040a4847f22e96b6af80a8c46ccbaade5a1f8",
-    "f34c8c2eacc598c27c484c359a53239bdc1c59e5"
+    "f34c8c2eacc598c27c484c359a53239bdc1c59e5",
+    "a12729af2bde0e6ece89f210ae0a7375138c2a8d"
   ],
   "web/h3/prompt-compiler.js": [
     "19683249836c69fcebd128f1c34b52e0c81c100f",
@@ -3281,7 +3299,8 @@
     "7cadfcdb07536e9c5f7c42ddb0a2d342636c985c",
     "5f61e557619c114cf54f25b8e6e47eb414a673ba",
     "c4942e2dacc2901ee5dcc5118c2875713ad8e4fd",
-    "98ccf88b2138dde005c9e765e63309d1827f1afd"
+    "98ccf88b2138dde005c9e765e63309d1827f1afd",
+    "8cc8ca40fe8100e69d0b893fbb6045b13eca34c1"
   ],
   "web/lab-ui.js": [
     "0034a31c4d87689cb67bd0209ea8555cc6cb2a41",
@@ -3317,7 +3336,8 @@
     "6520110e7f797ab692c3fcda855db0175bc07a2b",
     "d0cce4f5d23cc64876086779daa67fba5a39af41",
     "a587a986b68bf55a918b82c7ede569bdc9a67678",
-    "4ee17ccd6e8f00664c82f3ea4db14a513bc1562f"
+    "4ee17ccd6e8f00664c82f3ea4db14a513bc1562f",
+    "1614d9d0ee6b9e2cc2fa23dae24c0e9f487988b8"
   ],
   "web/organization.css": [
     "1424d366d4b48ec0f87a5e40dd22157c4191026e",
@@ -3436,7 +3456,8 @@
     "ffc12cfedd82645fdcc8d6ba858f7ce90960dcfc",
     "6bb2f31b85a03c9bdff6770fb98bca24137e44e6",
     "42d280738d66d91f0a594a4d68e72aad40ff8547",
-    "17db04d6ecf1d56373c69f921f4a16a27b01e8de"
+    "17db04d6ecf1d56373c69f921f4a16a27b01e8de",
+    "3978821e172de015102223c2b2474802d515f625"
   ],
   "workflows/h3_t2v_api.json": [
     "6862ce962e1eba0217d02b82b6dcaa192bddd6df",

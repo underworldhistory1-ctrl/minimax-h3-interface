@@ -594,7 +594,10 @@ class ProjectService(OrganizationMixin):
             referenced_assets = set()
             def collect_references(value):
                 if isinstance(value, dict):
+                    has_server_id = isinstance(value.get("assetId"), str) and bool(value.get("assetId"))
                     for key, item in value.items():
+                        if key == "asset_id" and has_server_id:
+                            continue
                         if (key in ("asset_id", "assetId") or key.endswith("_asset_id")) and isinstance(item, str) and item:
                             referenced_assets.add(item)
                         else:

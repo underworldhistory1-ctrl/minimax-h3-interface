@@ -104,7 +104,9 @@
     if(method==='turbo_ref'&&steps!==8)throw Error('References Turbo requires exactly 8 steps.');
     if(method==='turbo'&&(steps<4||steps>8))throw Error('Turbo v4 requires 4–8 steps.');
     if (enableRefine && (!Number.isFinite(Number(renderSpec.refine_scale ?? 1.25)) || Number(renderSpec.refine_scale ?? 1.25) < 1 || Number(renderSpec.refine_scale ?? 1.25) > 1.25)) throw new Error('This server supports refinement up to 1.25x.');
-    const refinement={steps:10,denoise:.4,cfg:1,sampler_name:'res_multistep',scheduler:'simple',...renderSpec.refinement};
+    const rawRefinement = renderSpec.refinement && typeof renderSpec.refinement === 'object' ? renderSpec.refinement : {};
+    const refinement={steps:10,denoise:.4,cfg:1,sampler_name:'res_multistep',scheduler:'simple'};
+    for (const k of ['steps','denoise','cfg','sampler_name','scheduler']) if (rawRefinement[k] !== undefined) refinement[k] = rawRefinement[k];
     if(enableRefine){
       if(!Number.isInteger(refinement.steps)||refinement.steps<1||refinement.steps>100||!Number.isFinite(refinement.denoise)||refinement.denoise<0||refinement.denoise>1||!Number.isFinite(refinement.cfg)||refinement.cfg<0||refinement.cfg>100)throw Error('Invalid refinement sampling settings.');
       Configuration.resolve({...renderSpec,loras:[],sampling:{...renderSpec.sampling,sampler_name:refinement.sampler_name,scheduler:refinement.scheduler}},capabilities);
@@ -337,7 +339,7 @@
       guides.forEach((guide, gIdx) => {
         const guideNodeId = allocate(70);
         const guideImgNodeId = allocate(Number(guideNodeId) + 1);
-        const guideFile = canonicalFile(resolvedFile(own(resolvedAssets,'guides') ?? resolvedAssets, guide.alias, guide.asset_id) ?? guide.file ?? guide.filename);
+        const guideFile = canonicalFile(resolvedFile(own(resolvedAssets,'guides') ?? resolvedAssets, guide.alias, guide.guide_id || guide.asset_id) ?? guide.file ?? guide.filename);
         if (!guideFile) throw new Error('Temporal guide image has not been resolved.');
         if (typeof guide.frame_idx !== 'number' || !Number.isInteger(guide.frame_idx)) throw new Error('Temporal guide frame index must be an integer.');
         const frameIdx = guide.frame_idx + (guide.relative_to_new_content && renderSpec.continuation ? contextLength : 0);
@@ -463,6 +465,7 @@
 
       g[refineSamplerId] = {
         class_type: "KSampler",
+        _meta: { title: "H3 refinement" },
         inputs: {
           model: refinementModel,
           seed: RenderValues.nextSeed(seed),

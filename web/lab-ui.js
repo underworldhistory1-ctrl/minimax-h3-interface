@@ -96,6 +96,8 @@ function renderContinuation(){
 function setContinuationMode(mode){
   selectMode(mode,true);
   applySelection('continuation');
+  for(const item of state.loras||[])if(item.enabled&&!loraModeCompatible(item.name,state.mode))item.enabled=false;
+  if(typeof renderLoras==='function')renderLoras();
   if(window.H3ConfigurationUI)H3ConfigurationUI.refresh();
 }
 
@@ -134,6 +136,7 @@ async function startUploadedContinuation(file){
   if(file.size>500*1024*1024)throw Error("Continuation source exceeds 500 MB.");
   const formatBytes=typeof fmtBytes==="function"?fmtBytes:(n=>n>=1048576?(n/1048576).toFixed(1)+" MB":Math.round(n/1024)+" KB");
   await withProjectLoading(async()=>{
+    if(typeof requireWorkspaceShot==='function')requireWorkspaceShot();
     if(!projectCtrl?.currentProject&&typeof ensureWorkingProject==="function")await ensureWorkingProject();
     if(!projectCtrl?.currentProject)throw Error("Open a project first.");
     const query=new URLSearchParams({project_id:state.activeProjectId,width:state.width,height:state.height,
@@ -180,7 +183,8 @@ async function useContinuationReferences(){
   await withProjectLoading(async()=>{
     const c=state.continuation;if(!c)return;
     if(state.modelsReady?.ref2va===false)throw Error("Ref2VA is not installed on this server.");
-    if(c.type==="generated"&&c.source_model!==modelRef){
+    const expectedModel=state.modelProfile&&state.modelProfile!=='original'?selectedCheckpoint():modelRef;
+    if(c.type==="generated"&&c.source_model!==expectedModel){
       const source=projectCtrl.currentProject?.takes?.find(t=>t.take_id===c.source_take_id)?.output_file||c.source_output;
       if(!source)throw Error("Select the original result and choose Video context · re-encode first.");
       const result=await post("/h3_studio/lab/media/import_video",{output_file:source,project_id:state.activeProjectId});
@@ -257,7 +261,7 @@ function captureProjectDraft(local=false){
     control:state.control?clone({...state.control,control_file:undefined,source_file:undefined,mask_file:undefined}):null,
     controlInputs:Object.fromEntries(Object.entries(state.controlInputs||{}).map(([key,value])=>[key,descriptor(value)])),
     reuse_source:clone(state.reuseSource||null),reuse_missing:[...(state.reuseUnresolved||[])],
-    settings:{duration:$("duration").value,durationSeconds:$("durationSeconds").value,steps:$("steps").value,seed:$("seed").value,refSize:$("refSize").value,renderMethod:method()},loras:[...state.loras.filter(x=>x.enabled).map(x=>({...x})),...(state.reuseRequiredLoras||[]).filter(l=>!state.loras.some(current=>current.name===l.name&&current.enabled)).map(l=>({...l}))]};
+    settings:{duration:$("duration").value,durationSeconds:$("durationSeconds").value,steps:$("steps").value,seed:$("seed").value,refSize:$("refSize").value,renderMethod:method()},loras:[...(state.lorasLoaded?state.loras.filter(x=>x.enabled).map(x=>({...x})):(state.desiredLoras||[]).filter(l=>l&&l.enabled!==false).map(l=>({...l}))),...(state.reuseRequiredLoras||[]).filter(l=>!(state.lorasLoaded?state.loras:state.desiredLoras||[]).some(current=>current.name===l.name&&current.enabled!==false)).map(l=>({...l}))]};
 }
 function emptyWorkspaceDraft(){return {mode:'text',prompts:{text:'',frames:'',refs:''},refs:[],dismissedCatalogAssets:[],guides:[],canvas:{width:1344,height:768},settings:{duration:'124',durationSeconds:'5.167',steps:'20',seed:'42',refSize:'max',renderMethod:'native'},loras:[]};}
 async function hydrateWorkspaceDraft(project,{freshTab=false,reuse=false}={}){
@@ -270,7 +274,7 @@ async function hydrateWorkspaceDraft(project,{freshTab=false,reuse=false}={}){
   const selectedDraft=typeof H3Scenes!=='undefined'?H3Scenes.draft(project,projectCtrl?.draftScope):project?.draft;
   let draft=(!reuse&&local)||(selectedDraft&&Object.keys(selectedDraft).length?selectedDraft:null)||emptyWorkspaceDraft();
   if(!reuse&&!local&&!state.tabDraftRestoreError&&!new URL(location.href).searchParams.has('reuse')&&typeof H3ProjectSettings!=='undefined'){
-    if(freshTab)draft=emptyWorkspaceDraft();
+    if(freshTab&&!draft?.reuse_source)draft=emptyWorkspaceDraft();
     draft=H3ProjectSettings.inherit(draft,project);
   }
   await hydrateProjectDraft(rebaseWorkspaceAssets(draft,project),{preserveFailedLocal:!!state.tabDraftRestoreError});
@@ -297,40 +301,52 @@ async function hydrateProjectDraft(draft,{preserveFailedLocal=false}={}){
   state.loras=state.loras.map(x=>({...x,enabled:!!draft.loras?.some(l=>l.name===x.name&&l.enabled!==false),strength:draft.loras?.find(l=>l.name===x.name)?.strength??x.strength}));
   const config=draft.configuration?clone(draft.configuration):{};
   Object.assign(state,{modelProfile:"original",checkpoint:null,hybridPreset:"none",sampling:{},nodeOptions:{},audioRefinement:{},sparseAttention:{},dials:[],refinement:{},refineScale:1.25,preserveReferenceAudio:false,preserveAudioSource:null,styleDirection:null},config);
+  state.modelProfile=state.modelProfile||"original";
   if(!state.sampling||typeof state.sampling!=='object')state.sampling={};
   if(!state.nodeOptions||typeof state.nodeOptions!=='object')state.nodeOptions={};
   if(!state.audioRefinement||typeof state.audioRefinement!=='object')state.audioRefinement={};
   if(!state.sparseAttention||typeof state.sparseAttention!=='object')state.sparseAttention={};
   if(!state.refinement||typeof state.refinement!=='object')state.refinement={};
+  else state.refinement=Object.fromEntries(Object.entries(state.refinement).filter(([k])=>['steps','denoise','cfg','sampler_name','scheduler'].includes(k)));
   if(!Array.isArray(state.dials))state.dials=[];
+  let hydratedPika=null;
   if(typeof H3Configuration!=='undefined'){
     const draftPika=(draft.loras||[]).find(l=>l&&l.enabled!==false&&H3Configuration.pikaVariant(l.name));
     if(draftPika){
-      const required=H3Configuration.pikaSampling(H3Configuration.pikaVariant(draftPika.name));
+      hydratedPika=H3Configuration.pikaVariant(draftPika.name);
+      const required=H3Configuration.pikaSampling(hydratedPika);
       state.sampling={...required,...state.sampling};
     }
   }
   if(window.H3ConfigurationUI)H3ConfigurationUI.refresh();
   state.control=draft.control?clone(draft.control):{enabled:false};state.controlInputs=controlInputs;state.preparedContext=null;
-  if($("enableRefine"))$("enableRefine").checked=!!draft.enableRefine;
+  if($("enableRefine")){$("enableRefine").checked=!!draft.enableRefine;if($("refinePresetInfo")?.style)$("refinePresetInfo").style.display=$("enableRefine").checked?"block":"none";}
   if($("preparationMode"))$("preparationMode").value=restoredPreparationMode(draft.preparationMode);
   if(window.H3ConnectedStudio)H3ConnectedStudio.restoreControl();
   if(draft.canvas){state.width=draft.canvas.width;state.height=draft.canvas.height;}
   state.prompts={text:"",frames:"",refs:"",...draft.prompts};state.promptMode=draft.promptMode||"guided";$("promptMode").value=state.promptMode;$("frameFit").value=draft.frameFit||"crop";
   $("fitImages").checked=draft.fitImages!==false;$("fitFrames").checked=draft.fitFrames!==false;
-  for(const [key,value] of Object.entries(draft.settings||{}))if($(key))$(key).value=value;
-  $("seed").value=String(draft.settings?.seed??42);repairSavedSeed();syncDuration();
+  const ds=draft.settings||{};
+  for(const [key,value] of Object.entries(ds)){
+    const el=$(key);
+    if(!el||value===null||value===undefined||value==="")continue;
+    if(el.tagName==="SELECT"&&el.options&&![...el.options].some(o=>o.value===String(value)))continue;
+    el.value=String(value);
+  }
+  if((ds.durationSeconds===null||ds.durationSeconds===undefined||ds.durationSeconds==="")&&Number(ds.duration)>0&&$("durationSeconds"))$("durationSeconds").value=String(Number(ds.duration)/24);
+  if(hydratedPika&&$("steps")&&Number($("steps").value)!==hydratedPika.steps)$("steps").value=String(hydratedPika.steps);
+  $("seed").value=String(ds.seed??42);repairSavedSeed();syncDuration();
   state.desiredLoras=state.lorasLoaded?null:clone(draft.loras||[]);
   state.aspectFormat=Object.keys(aspectPresets).find(k=>aspectPresets[k].some(([w,h])=>w===state.width&&h===state.height))||"16:9";
-  state.mode=draft.mode||"text";$("prompt").value=state.prompts[state.mode]||"";selectMode(state.mode,true);state.loras=state.loras.map(x=>({...x,enabled:!!draft.loras?.some(l=>l.name===x.name),strength:draft.loras?.find(l=>l.name===x.name)?.strength??x.strength}));
+  state.mode=draft.mode||"text";$("prompt").value=state.prompts[state.mode]||"";selectMode(state.mode,true);state.loras=state.loras.map(x=>({...x,enabled:!!draft.loras?.some(l=>l.name===x.name&&l.enabled!==false),strength:draft.loras?.find(l=>l.name===x.name)?.strength??x.strength}));
   await Promise.all([renderFrameItem("first"),renderFrameItem("last")]);renderRefs();renderGuides();renderContinuation();updatePreviewLive();
   if(state.continuation?.source_asset_id){try{await projectCtrl.getAsset(state.continuation.source_asset_id);}catch{missing.push("continuation source");}}
   state.restoreExtraMissing=missing;
-  const mediaRequirements=new Set([draft.first,draft.last,...(draft.refs||[]),...(draft.guides||[]),...Object.values(draft.controlInputs||{})].filter(Boolean).flatMap(item=>[item.assetId,item.alias||'Unrecorded reference']));
+  const mediaRequirements=new Set([draft.first,draft.last,...(draft.refs||[]),...(draft.guides||[]),...Object.values(draft.controlInputs||{})].filter(Boolean).flatMap(item=>[item.assetId,item.assetId?item.asset_id:null,item.alias||'Unrecorded reference'].filter(Boolean)));
   state.reuseUnresolved=(draft.reuse_missing||[]).filter(name=>!mediaRequirements.has(name));
   state.reuseSource=draft.reuse_source?clone(draft.reuse_source):null;state.reuseRequiredLoras=[];state.reuseCheckpoint=null;
   if(draft.reuse_source){
-    for(const adapter of draft.loras||[])if(adapter.enabled&&!state.loras.some(l=>l.name===adapter.name&&l.enabled)){state.reuseUnresolved.push('LoRA '+adapter.name);state.reuseRequiredLoras.push(adapter);}
+    for(const adapter of draft.loras||[])if(adapter.enabled!==false&&!state.loras.some(l=>l.name===adapter.name&&l.enabled)){state.reuseUnresolved.push('LoRA '+adapter.name);state.reuseRequiredLoras.push(adapter);}
     if(draft.configuration?.checkpoint&&draft.configuration.checkpoint!==selectedCheckpoint()){state.reuseUnresolved.push('Checkpoint '+draft.configuration.checkpoint);state.reuseCheckpoint=draft.configuration.checkpoint;}
     state.restoreMissing=[...new Set([...missing,...state.reuseUnresolved])];
   }
@@ -382,8 +398,8 @@ function initLabUI(){
   $("importProject").onclick=()=>$("projectBundleFile").click();$("projectBundleFile").onchange=async()=>{if(!$("projectBundleFile").files[0])return;try{await withProjectLoading(async()=>{if(typeof saveWorkspaceDraft==='function'&&projectCtrl.currentProject)await saveWorkspaceDraft();const p=await projectCtrl.importBundle($("projectBundleFile").files[0]);await hydrateWorkspaceDraft(p);await refreshProjectList();});}catch(e){info(e.message,true);}finally{$("projectBundleFile").value="";}};
   $("promptMode").onchange=()=>{state.promptMode=$("promptMode").value;updatePreviewLive();saveDraft();};
   $("frameFit").onchange=()=>Promise.all([renderFrameItem("first"),renderFrameItem("last")]);
-  $("addGuide").onclick=()=>{const kind=$("guideKind").value;$("guideFile").accept=kind==="image"?"image/png,image/jpeg,image/webp":kind==="audio"?".wav,.mp3,.m4a,.flac":".mp4,.mov,.webm";$("guideFile").click();};$("guideFile").onchange=()=>{const file=$("guideFile").files[0];if(file&&!state.busy){state.guides.push({asset_id:crypto.randomUUID(),kind:$("guideKind").value,file,url:URL.createObjectURL(file),frame_idx:0});renderGuides();}$("guideFile").value="";};
-  $("clearContinuation").onclick=()=>{if(state.busy||state.projectLoading)return;state.continuation=null;renderContinuation();updatePreviewLive();saveDraft();};
+  $("addGuide").onclick=()=>{const kind=$("guideKind").value;$("guideFile").accept=kind==="image"?"image/png,image/jpeg,image/webp":kind==="audio"?".wav,.mp3,.m4a,.flac":".mp4,.mov,.webm";$("guideFile").click();};$("guideFile").onchange=()=>{const file=$("guideFile").files[0];if(file&&!state.busy){state.guides.push({guide_id:crypto.randomUUID(),kind:$("guideKind").value,file,url:URL.createObjectURL(file),frame_idx:0});renderGuides();}$("guideFile").value="";};
+  $("clearContinuation").onclick=()=>{if(state.busy||state.projectLoading)return;state.continuation=null;state.restoreExtraMissing=(state.restoreExtraMissing||[]).filter(x=>x!=='continuation source');state.reuseUnresolved=(state.reuseUnresolved||[]).filter(x=>x!=='Generated continuation context');syncRestoredInputStatus();renderContinuation();updatePreviewLive();saveDraft();};
   $("durationSeconds").addEventListener("change",renderContinuation);
   for(const which of ["first","last"])$(which+"File").addEventListener("change",()=>setTimeout(()=>renderFrameItem(which),0));
   $("purgeContext").onclick=async()=>{if(state.busy||!state.current?.takeId)return;try{await post(`/h3_studio/lab/contexts/${encodeURIComponent(state.current.takeId)}/purge`,{});info("Extend data removed; the video is retained.");$("refreshContextStorage").click();}catch(e){info("Cannot remove protected extend data: "+e.message,true);}};
@@ -393,7 +409,7 @@ function initLabUI(){
       const invalid=new Set(replaced?[replaced.take_id]:[]);let changed=true;while(changed){changed=false;for(const t of proj.takes)if(t.parent_take_id&&invalid.has(t.parent_take_id)&&!invalid.has(t.take_id)){invalid.add(t.take_id);changed=true;}}
       const position=replaced?accepted.indexOf(replaced.take_id):accepted.length;const next=accepted.filter(id=>!invalid.has(id)&&id!==take.take_id);next.splice(Math.min(position,next.length),0,take.take_id);
       await projectCtrl.saveCurrentProject({accepted_take_ids:next,takes:proj.takes.map(t=>invalid.has(t.take_id)?{...t,invalidated_by:take.take_id}:t)});info("Take accepted into the sequence.");}catch(e){info(e.message,true);}};
-  $("useResult").onclick=async()=>{const entry=state.current;if(!entry||state.busy||state.projectLoading)return;try{const role=$("resultRole").value;if(role==="video"){if(state.continuation?.type==="generated"&&state.continuation.source_model!==modelRef)throw Error("Use the Active continuation References action to re-encode this source first.");const response=await fetch(videoURL(entry.file));if(!response.ok)throw Error("Result unavailable");const blob=await response.blob();selectMode("refs");if(state.mode!=="refs")throw Error("References mode is unavailable.");state.refs.push({file:new File([blob],entry.file.filename,{type:blob.type}),kind:"video",alias:aliasName(entry.file.filename),role:"custom",previewUrl:URL.createObjectURL(blob),useAudio:false,trimEnabled:true,trimStart:0,trimDuration:15});renderRefs();}else{const index=Number($("resultFrameIndex").value);const result=await post("/h3_studio/lab/media/frame",{filename:entry.file.filename,output_file:resultOutputPath(entry),frame_index:index,project_id:state.activeProjectId});await applyQwenHandoff(result.asset,role);} }catch(e){info(e.message,true);}};
+  $("useResult").onclick=async()=>{const entry=state.current;if(!entry||state.busy||state.projectLoading)return;try{const role=$("resultRole").value;const expectedModel=state.modelProfile&&state.modelProfile!=='original'?selectedCheckpoint():modelRef;if(role==="video"){if(state.continuation?.type==="generated"&&state.continuation.source_model!==expectedModel)throw Error("Use the Active continuation References action to re-encode this source first.");const response=await fetch(videoURL(entry.file));if(!response.ok)throw Error("Result unavailable");const blob=await response.blob();selectMode("refs");if(state.mode!=="refs")throw Error("References mode is unavailable.");state.refs.push({file:new File([blob],entry.file.filename,{type:blob.type}),kind:"video",alias:aliasName(entry.file.filename),role:"custom",previewUrl:URL.createObjectURL(blob),useAudio:false,trimEnabled:true,trimStart:0,trimDuration:15});renderRefs();}else{const index=Number($("resultFrameIndex").value);const result=await post("/h3_studio/lab/media/frame",{filename:entry.file.filename,output_file:resultOutputPath(entry),frame_index:index,project_id:state.activeProjectId});if(state.activeProjectId&&projectCtrl)await projectCtrl.loadProject(state.activeProjectId);await applyQwenHandoff(result.asset,role);} }catch(e){info(e.message,true);}};
   $("exportMedia").onclick=async()=>{if(!state.current||state.busy)return;try{const result=await post("/h3_studio/lab/media/export",{filename:state.current.file.filename,output_file:resultOutputPath(state.current),format:$("mediaFormat").value});const a=document.createElement("a");a.href=api(result.download_url);a.download=result.filename;a.click();}catch(e){info(e.message,true);}};
   $("upscaleTake").onclick=()=>upscaleVideoEntry(state.current,$("upscaleTarget").value,$("upscaleStatus"),()=>state.current);
   $("videoActionsUpscale").onclick=()=>{
@@ -506,5 +522,5 @@ function appendProjectResults(project){
 async function withProjectLoading(action){
   if(state.busy||state.projectLoading)throw Error("Wait for the current operation to finish.");
   state.projectLoading=true;refreshVideoActions();renderRefs();if(typeof renderProjectCatalog==='function')renderProjectCatalog();const controls=["generate","projectSelect","btnNewProject","btnSaveProject","btnExportProject","importProject","useResult","extendVideo","server","saveServer","uploadContinuation","sourceTailSeconds","sourceFit","sourceMode","continuationReferences","clearContinuation","acceptTake","btnAssembleSequence","exportMedia","upscaleTake","upscaleTarget","refreshContextStorage","purgeContext"].map(id=>$(id)).filter(Boolean);controls.push(...[...document.querySelectorAll('.left input,.left select,.left textarea,.left button')].filter(node=>!controls.includes(node)));const previous=controls.map(x=>x.disabled);controls.forEach(x=>x.disabled=true);
-  try{return await action();}finally{state.projectLoading=false;controls.forEach((x,i)=>x.disabled=x.id==="upscaleTake"?!!(state.busy||state.mediaExporting):state.busy||previous[i]);renderEstimates();refreshLabControls();refreshVideoActions();renderRefs();renderGuides();if(typeof renderLoras==='function')renderLoras();if(typeof updateCapabilities==='function')updateCapabilities();if(typeof renderProjectCatalog==='function')renderProjectCatalog();}
+  try{return await action();}finally{state.projectLoading=false;controls.forEach((x,i)=>x.disabled=x.id==="upscaleTake"?!!(state.busy||state.mediaExporting):state.busy||previous[i]);renderEstimates();refreshLabControls();refreshVideoActions();renderRefs();renderGuides();if(typeof renderLoras==='function')renderLoras();if(typeof updateCapabilities==='function')updateCapabilities();if(typeof renderProjectCatalog==='function')renderProjectCatalog();if(typeof window!=='undefined'&&window.H3ConfigurationUI)window.H3ConfigurationUI.refresh();if(typeof window!=='undefined'&&window.H3ConnectedStudio)window.H3ConnectedStudio.refreshAvailability();}
 }

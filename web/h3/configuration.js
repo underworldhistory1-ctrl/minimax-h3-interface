@@ -124,8 +124,8 @@
     const s={...spec,sampling:{...spec.sampling},loras:(spec.loras||[]).map(x=>({...x}))};
     if(action==='mode'&&s.mode!=='refs')s.preserve_reference_audio=null;
     let pika=s.loras.find(x=>x.enabled&&pikaVariant(x.name));
-    if(action==='continuation'&&s.continuation){if(['turbo','turbo_ref'].includes(s.render_method)){s.render_method='native';s.steps=20;}s.enable_refine=false;s.refine=false;s.control={...s.control,enabled:false};}
-    if(action==='mode'&&pika){
+    if(action==='continuation'&&s.continuation){s.preserve_reference_audio=null;if(['turbo','turbo_ref'].includes(s.render_method)){s.render_method='native';s.steps=20;}s.enable_refine=false;s.refine=false;s.control={...s.control,enabled:false};}
+    if(['mode','continuation'].includes(action)&&pika){
       const variant=pikaVariant(pika.name),family=s.mode==='refs'?'ref2va':'fl2va';
       if(variant.family!==family){const name=Object.keys(PIKA).find(n=>PIKA[n].steps===variant.steps&&PIKA[n].variant===variant.variant&&PIKA[n].family===family),other=s.loras.find(x=>x.name===name);pika.enabled=false;if(other){other.enabled=true;pika=other;}else pika=null;}
     }
@@ -141,8 +141,7 @@
       s.sampling={...s.sampling,...pikaSampling(variant)};pika.strength=1;
       for(const l of s.loras)if(l!==pika&&!isSecondaryLoRA(l.name))l.enabled=false;
     }
-    const singularityRefs = s.model_profile==='singularity'&&s.mode==='refs';
-    if(['turbo','turbo_ref'].includes(s.render_method)||(pika&&!singularityRefs)){
+    if(['turbo','turbo_ref'].includes(s.render_method)){
       s.enable_refine=false;s.refine=false;
     }
     if(pika||['turbo','turbo_ref'].includes(s.render_method)){
@@ -157,11 +156,10 @@
     const pika=(spec.loras||[]).some(x=>x.enabled&&pikaVariant(x.name));
     const turbo=['turbo','turbo_ref'].includes(spec.render_method);
     const managed=pika||turbo;
-    const singularityRefs=spec.model_profile==='singularity'&&spec.mode==='refs';
-    const single=(turbo||(pika&&!singularityRefs))?'This selected adapter/method requires a single generation pass.':'';
+    const single=turbo?'This selected adapter/method requires a single generation pass.':'';
     return {managed,sampling:managed,refine:single||(spec.control?.enabled?'Disable ControlNet before refinement.':spec.continuation?'Clear continuation before refinement.':''),
       control:(managed?'This selected adapter/method requires generation without ControlNet.':'')||(spec.enable_refine||spec.refine?'Disable refinement before ControlNet.':spec.continuation?'Clear continuation before ControlNet.':spec.audio_refinement?.enabled?'Disable audio enhancement before ControlNet.':''),
-      audio:single||(spec.control?.enabled?'Disable ControlNet before audio enhancement.':spec.preserve_reference_audio?'Original reference soundtrack is preserved; generated-audio enhancement is bypassed.':''),
+      audio:(managed?'This selected adapter/method requires generation without audio enhancement.':'')||(spec.control?.enabled?'Disable ControlNet before audio enhancement.':spec.preserve_reference_audio?'Original reference soundtrack is preserved; generated-audio enhancement is bypassed.':''),
       sparse:turbo?'Retired Turbo v4 requires dense sampling.':'',
       pika:'',turbo:spec.continuation?'Clear continuation before selecting Turbo.':''};
   }
@@ -172,8 +170,7 @@
     if(active.some(x=>x!==lora&&!isSecondaryLoRA(x.name))||Number(lora.strength??1)!==1)throw Error('Pika Flex requires one adapter at strength 1.');
     if(!pikaProfileCompatible(spec)||(spec.render_method||'native')!=='native'||variant.family!==(spec.mode==='refs'?'ref2va':'fl2va'))throw Error('Pika Flex requires Original or supported Singularity v2 References with the matching adapter.');
     if(Number(spec.steps)!==variant.steps)throw Error('Pika Flex requires '+variant.steps+' steps.');
-    const singularityRefs=spec.model_profile==='singularity'&&spec.mode==='refs';
-    if(spec.control?.enabled||spec.audio_refinement?.enabled||(!singularityRefs&&(spec.enable_refine||spec.refine)))throw Error('Pika Flex requires a single pass without refinement or ControlNet.');
+    if(spec.control?.enabled||spec.audio_refinement?.enabled)throw Error('Pika Flex requires generation without ControlNet or audio enhancement.');
     const required={sampler_name:'euler',scheduler:'simple',cfg:1,denoise:1,shift_video:variant.family==='ref2va'?12:6,shift_audio:3};
     for(const [key,value] of Object.entries(required))if(spec.sampling?.[key]!==value)throw Error('Pika Flex sampling disagrees: '+key);
     return variant;
@@ -184,12 +181,15 @@
     if(!Array.isArray(dials))throw Error('Dials must be a list.');
     if(dials.filter(x=>x.enabled).length>12)throw Error('At most 12 Dials can be applied.');
     if(spec.steps!=null&&(!Number.isInteger(Number(spec.steps))||Number(spec.steps)<1||Number(spec.steps)>100))throw Error('Steps must be an integer between 1 and 100.');
+    if(spec.continuation&&spec.target_frames!=null&&Number(spec.target_frames)<=Number(spec.continuation.context_length??39))throw Error('Duration must exceed the continuation context ('+(Number(spec.continuation.context_length??39)/24).toFixed(2)+' s).');
     for(const dial of dials.filter(x=>x.enabled)){
       if(!caps.dials_ready||!(caps.dial_files||[]).includes(dial.name))throw Error('Dial runtime or selected file is unavailable. Run the launcher with --matlow.');
       if(!Number.isFinite(dial.strength)||dial.strength < -20||dial.strength>20)throw Error('Dial strength must be between -20 and 20.');
     }
     if((spec.loras||[]).some(x=>x.enabled&&/^dials[\\/]/i.test(x.name||'')))throw Error('Use the Dials panel for steering files; they are not ordinary LoRAs.');
     if(spec.control?.enabled&&(spec.enable_refine||spec.refine||spec.continuation||spec.audio_refinement?.enabled))throw Error('ControlNet cannot be combined with refinement, continuation or audio enhancement.');
+    if((spec.enable_refine||spec.refine)&&spec.continuation)throw Error('Refinement cannot be combined with continuation.');
+    if((spec.enable_refine||spec.refine)&&caps.refine_ready===false)throw Error('Refinement is unavailable on this server.');
     if((spec.loras||[]).some(x=>x.enabled&&/^qwen21[\\/]/i.test(x.name||'')))throw Error('Qwen Image adapters belong in Create Image, not H3 video.');
     validatePika(spec);
     validateCharacterSwap(spec);
@@ -229,7 +229,7 @@
     for(const [key,values] of Object.entries(lists))if(!values.includes(settings[key]))throw Error('Selected '+key+' is not supported by this runtime.');
     if(profile==='hybrid_loader'&&settings.weight_dtype!=='default')throw Error('The hybrid loader preserves the checkpoint precision and does not expose weight_dtype. Select default precision.');
     const preset=spec.hybrid_preset||'none';if(!['none','block_range_adaln','all_adaln'].includes(preset))throw Error('Unknown hybrid overlay preset.');
-    if(profile!=='original'&&spec.continuation?.type==='generated'&&spec.continuation.source_model!==name)throw Error('Re-encode the continuation video before changing checkpoints.');
+    if(profile!=='original'&&spec.continuation?.type==='generated'&&spec.continuation.source_model!==name&&!(caps._allowAutoReencode&&(spec.continuation.source_output||spec.continuation.source_take_id)))throw Error('Re-encode the continuation video before changing checkpoints.');
     return {profile,family,checkpoint:name,loader,settings,hybrid_preset:preset,experimental:profile!=='original',dials:dials.filter(x=>x.enabled)};
   }
   // Only scalar widgets declared by the live node schema can override a patch.

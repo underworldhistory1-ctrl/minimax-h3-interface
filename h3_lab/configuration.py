@@ -251,10 +251,7 @@ def validate_pika(spec):
     chain_count = sum(n.get('class_type') == 'LoraLoaderModelOnly' for n in graph.values())
     if chain_count not in ((len(active), 2 * len(active)) if (spec.get('enable_refine') or spec.get('refine')) else (len(active),)):
         raise ValueError('Pika Flex requires approved adapters')
-    singularity_refs = spec.get('model_profile') == 'singularity' and spec.get('mode') == 'refs'
     enable_refine = bool(spec.get('enable_refine') or spec.get('refine'))
-    if enable_refine and not singularity_refs:
-        raise ValueError('Pika Flex requires a single pass without additional processing')
     facerefine_enabled = bool((spec.get('facerefine') or {}).get('enabled'))
     if not (enable_refine or facerefine_enabled):
         if sum('sampler' in n.get('class_type', '').lower() for n in graph.values()) != 1:
@@ -269,16 +266,17 @@ def validate_pika(spec):
             raise ValueError('Pika Flex decode must follow the approved refinement sampler')
     
     # Trace model link backwards through any chained secondary LoRAs to ensure Pika is the foundation
+    pika_keys = {k for k, _ in nodes}
     curr_link = _before_dials(graph, graph.get('2', {}).get('inputs', {}).get('model'))
     while isinstance(curr_link, list) and len(curr_link) == 2 and isinstance(curr_link[0], str) and curr_link[0] in graph:
-        if curr_link[0] == key:
+        if curr_link[0] in pika_keys:
             break
         n_curr = graph[curr_link[0]]
         if n_curr.get('class_type') == 'LoraLoaderModelOnly':
             curr_link = n_curr.get('inputs', {}).get('model')
         else:
             break
-    if curr_link != [key, 0]:
+    if not (isinstance(curr_link, list) and len(curr_link) == 2 and curr_link[0] in pika_keys and curr_link[1] == 0):
         raise ValueError('Pika Flex model path disagrees')
     if any(graph.get(k, {}).get('inputs', {}).get('samples') != ['13', 0] for k in ('9', '10')):
         raise ValueError('Pika Flex decode must feed output nodes 9 and 10')
@@ -348,7 +346,7 @@ def _validate_execution_path(spec, graph, audio_sampler, capabilities):
     import math
     for lora in declarations:
         for field in ('strength','refinement_strength'):
-            if field in lora and (type(lora[field]) not in (int,float) or not math.isfinite(lora[field]) or not 0<=lora[field]<=2): raise ValueError('Invalid LoRA strength')
+            if lora.get(field) is not None and (type(lora[field]) not in (int,float) or not math.isfinite(lora[field]) or not 0<=lora[field]<=2): raise ValueError('Invalid LoRA strength')
         if lora.get('enabled'):
             import re
             fl=bool(re.search(r'fl2v|t2v',lora['name'],re.I));ref=bool(re.search(r'ref2v|r2v',lora['name'],re.I))
@@ -469,7 +467,7 @@ def _validate_execution_path(spec, graph, audio_sampler, capabilities):
     def check_loras(path, refinement=False):
         actual=[node(key) for key in reversed(path) if graph[key].get('class_type')=='LoraLoaderModelOnly']
         if method=='turbo_ref': return  # Managed adapter is validated separately below.
-        expected=[(l['name'],l.get('refinement_strength',.25 if 'motion_repair_v2' in l['name'].lower() else l.get('strength',1)) if refinement else l.get('strength',1)) for l in declared]
+        expected=[(l['name'],(l['refinement_strength'] if l.get('refinement_strength') is not None else (.25 if 'motion_repair_v2' in l['name'].lower() else l.get('strength',1))) if refinement else l.get('strength',1)) for l in declared]
         if [(l.get('lora_name'),l.get('strength_model')) for l in actual]!=expected: raise ValueError('Connected LoRA chain disagrees with the selected pass')
     check_loras(models)
     refine=bool(spec.get('enable_refine') or spec.get('refine'))
@@ -539,6 +537,8 @@ def validate_configuration(spec, capabilities):
         return
     if (spec.get('control') or {}).get('enabled') and (spec.get('continuation') or spec.get('enable_refine') or spec.get('refine') or (spec.get('audio_refinement') or {}).get('enabled')):
         raise ValueError('ControlNet cannot be combined with refinement, continuation or audio enhancement')
+    if (spec.get('enable_refine') or spec.get('refine')) and spec.get('continuation'):
+        raise ValueError('Refinement cannot be combined with continuation')
     profile = spec.get('model_profile', 'original')
     refs = spec.get('mode') == 'refs'
     loader = graph.get('1', {})

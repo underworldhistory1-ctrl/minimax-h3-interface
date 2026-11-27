@@ -60,6 +60,12 @@
 .cont-compact-grid{display:grid;grid-template-columns:68px minmax(0,1fr) minmax(0,1fr);gap:6px;margin-top:8px}
 .cont-compact-grid label{margin:0 0 3px;font-size:10px}
 .cont-compact-grid input,.cont-compact-grid select{padding:6px 7px;font-size:11px}
+.ref-keyframe-box{margin-top:8px;padding:8px 9px;border:1px solid #526326;border-radius:8px;background:#222818}
+.ref-keyframe-box label{margin:0 0 4px;font-size:10px;color:var(--acid)}
+.ref-keyframe-row{display:flex;align-items:center;gap:6px}
+.ref-keyframe-row input{flex:1;min-width:0;padding:6px 8px!important;font-size:12px!important}
+.ref-keyframe-row button{flex:0 0 auto;padding:6px 8px;font-size:10px}
+.ref-kf-badge{display:inline-block;padding:1px 6px;border-radius:5px;background:#2e3819;border:1px solid #5a6d28;color:var(--acid);font-size:10px;font-weight:700;margin-left:6px}
 </style>
 <link rel="stylesheet" href="./reference-controls.css?v=20261104-interface-2.11.0">
 <link rel="stylesheet" href="./studio-ux.css?v=20261115-interface-2.17.3">
@@ -127,7 +133,7 @@
      <div><label for="sourceFit">FIT</label><select id="sourceFit"><option value="crop">Crop</option><option value="contain">Contain</option></select></div>
      <div><label for="sourceMode">INPUTS</label><select id="sourceMode"><option value="refs">References</option><option value="text">Text / keys</option></select></div>
     </div>
-    <details class="tip" style="margin-top:6px"><summary style="cursor:pointer">Notes</summary><p data-guidance-key="videoHelp5" lang="en" dir="ltr" style="margin:4px 0">Choose the video to extend here. Uploading a video in References supplies guidance; it does not select a continuation source.</p><div data-guidance-key="videoHelp6" lang="en" dir="ltr">To extend an existing project result, use Extend clip on that result below. Storyboard = shot plan in References; keyframe = one image at a chosen time.</div></details>
+    <div class="tip" hidden><p data-guidance-key="videoHelp5" lang="en" dir="ltr">Choose the video to extend here. Uploading a video in References supplies guidance; it does not select a continuation source.</p><div data-guidance-key="videoHelp6" lang="en" dir="ltr">To extend an existing project result, use Extend clip on that result below. Storyboard = shot plan in References; keyframe = one image at a chosen time.</div></div>
    </details>
    <section class="panel" id="framesSection" hidden><div class="workflow-help" data-guidance-key="frames" lang="en" dir="ltr">These are the opening and closing images of the video. Upload either or both; H3 generates the motion between them. Use References for images defining a character or location.</div>
     <h2>Start &amp; end frames</h2><p data-guidance-key="videoHelp7" lang="en" dir="ltr">Set the exact first frame, last frame, or both. The first image should match the canvas aspect ratio.</p>
@@ -229,12 +235,12 @@
 <script src="./h3/reference-policy.js?v=20261104-interface-2.13.0"></script>
 <script src="./h3/reference-controls.js?v=20261104-interface-2.13.0"></script>
 <script src="./h3/prompt-compiler.js?v=inline-definitions-20261104-interface-2.13.0"></script>
-<script src="./h3/configuration.js?v=20261126-auto-extend-pika"></script>
-<script src="./h3/graph-builder.js?v=20261126-auto-extend-pika"></script>
+<script src="./h3/configuration.js?v=20261127-refine-full-compat"></script>
+<script src="./h3/graph-builder.js?v=20261127-refine-full-compat"></script>
 <script src="./h3/scenes-ui.js?v=20261103-interface-2.9.0"></script>
 <script src="./h3/project-controller.js?v=20261103-interface-2.9.0"></script>
 <script src="./h3/project-settings.js?v=20261104-interface-2.15.0"></script>
-<script src="./lab-ui.js?v=20261126-reuse-pika-fix"></script>
+<script src="./lab-ui.js?v=20261127-refine-full-compat"></script>
 <script src="./h3/vendor/sortable.min.js?v=1.15.7"></script>
 <script src="./h3/drag-sort.js?v=20261104-interface-2.13.0"></script>
 <script src="./h3/reference-order.js?v=20261104-interface-2.13.0"></script>
@@ -244,17 +250,17 @@
 <script src="./h3/timing-estimator.js?v=20261123-sol-attn"></script>
 <script src="./h3/tab-draft-store.js?v=20261103-interface-2.9.0"></script>
 <script src="./h3/reuse-navigation.js?v=20261103-interface-2.9.0"></script>
-<script src="./studio.js?v=20261126-reuse-pika-fix"></script>
+<script src="./studio.js?v=20261127-refine-full-compat"></script>
 <script src="./h3/updates-ui.js?v=20261115-interface-2.17.3"></script>
 <script src="./h3/connected-studio.js?v=20261104-interface-2.13.0"></script>
-<script src="./h3/configuration-ui.js?v=20261126-auto-extend-pika"></script>
+<script src="./h3/configuration-ui.js?v=20261127-refine-full-compat"></script>
 <script src="./h3/dials-ui.js?v=20261126-draft-clone-fix"></script>
 <dialog id="workspaceNameDialog" class="organization-dialog" aria-labelledby="workspaceNameTitle"><form method="dialog" id="workspaceNameForm"><h2 id="workspaceNameTitle">Name</h2><label for="workspaceNameInput">NAME</label><input id="workspaceNameInput" required maxlength="160"><p id="workspaceNameError" role="alert"></p><div class="row"><button value="cancel" formnovalidate class="button alt">Cancel</button><button value="save" class="button">Save name</button></div></form></dialog>
 <dialog id="fileProjectDialog" class="organization-dialog" aria-labelledby="fileProjectTitle"><h2 id="fileProjectTitle">Project folder</h2><p data-guidance-key="videoHelp27" lang="en" dir="ltr">Grouping changes the project location in this library. Media, stable identities and saved shots stay intact.</p><label for="fileProjectFolder">DESTINATION FOLDER</label><select id="fileProjectFolder"></select><p id="fileProjectStatus" role="alert"></p><div class="row"><button data-close-dialog class="button alt">Cancel</button><button id="fileProjectApply" class="button">Move project</button></div></dialog>
 <dialog id="fileAssetsDialog" class="organization-dialog" aria-labelledby="fileAssetsTitle"><h2 id="fileAssetsTitle">Organize selected assets</h2><p data-guidance-key="videoHelp28" lang="en" dir="ltr">Folders organize media independently of its reference role.</p><label for="fileAssetsFolder">DESTINATION FOLDER</label><select id="fileAssetsFolder"></select><p id="fileAssetsStatus" role="alert"></p><div class="row"><button data-close-dialog class="button alt">Cancel</button><button id="fileAssetsApply" class="button">Move selected assets</button></div></dialog>
 <dialog id="transferDialog" class="organization-dialog" aria-labelledby="transferTitle"><h2 id="transferTitle">Transfer materials</h2><p id="transferSummary"></p><label for="transferTarget">DESTINATION PROJECT</label><select id="transferTarget"></select><label for="transferMode">ACTION</label><select id="transferMode"><option value="copy">Copy · preserve source</option><option value="move">Move · check dependencies</option></select><p id="transferStatus" role="status" aria-live="polite"></p><div class="row"><button data-close-dialog class="button alt">Cancel</button><button id="transferApply" class="button">Transfer selected materials</button></div></dialog>
-<script src="./h3/organization-ui.js?v=20261103-interface-2.9.0"></script>
-<script src="./h3/project-workspace.js?v=20261123-reuse-edit-fix"></script>
+<script src="./h3/organization-ui.js?v=20261127-refine-full-compat"></script>
+<script src="./h3/project-workspace.js?v=20261127-refine-full-compat"></script>
 
 <script src="./h3/video-tab-state.js?v=20261103-interface-2.9.0"></script>
 <script src="./h3/storage-status.js?v=20261104-interface-2.15.0"></script>

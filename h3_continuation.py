@@ -72,12 +72,17 @@ def context_directory():
 def preserve_context(checkpoint, token, prompt, tensors):
     if not isinstance(prompt, dict):
         return  # Decode-only recovery does not invent an engine identity.
+    if any(isinstance(n, dict) and n.get("class_type") == "MinimaxH3LatentUpscaler3D" for n in prompt.values()):
+        return  # Refined latents differ in spatial/pipeline signature; extend falls back to video re-encode.
     inputs = [n.get("inputs", {}) for n in prompt.values() if isinstance(n, dict)]
     model = next((i["unet_name"] for i in inputs if "unet_name" in i), None)
     if model is None:
         model = next((i['base_model'] for i in inputs if 'base_model' in i), None)
     canvas = next((i for i in inputs if all(k in i for k in ("width", "height", "length"))), None)
     if not model or canvas is None:
+        return
+    video_tensor = tensors.get("nested_0")
+    if video_tensor is None or video_tensor.ndim != 5 or tuple(video_tensor.shape[-2:]) != (canvas["height"] // 16, canvas["width"] // 16):
         return
     folder = context_directory()
     target = folder / (token + ".safetensors")

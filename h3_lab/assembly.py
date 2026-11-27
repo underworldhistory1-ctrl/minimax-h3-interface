@@ -73,7 +73,7 @@ def assemble_sequence(clip_paths: list, output_path: str, fps: int = 24, overlap
         raise ValueError("H3 sequences require 24 fps")
     infos = [inspect_media(path) for path in clip_paths]
     frame_counts = []
-    canvas = None
+    clip_canvases = []
     for info, overlap in zip(infos, overlap_frames):
         streams = info.get("streams", [])
         video = next((stream for stream in streams if stream.get("codec_type") == "video"), None)
@@ -84,21 +84,23 @@ def assemble_sequence(clip_paths: list, output_path: str, fps: int = 24, overlap
         if Fraction(video.get("r_frame_rate", "0/1")) != fps:
             raise ValueError("Every clip must be canonical 24 fps")
         dimensions = (video.get("width"), video.get("height"))
-        canvas = canvas or dimensions
-        if dimensions != canvas:
-            raise ValueError("Clip canvases do not match")
+        if not dimensions[0] or not dimensions[1]:
+            raise ValueError("Clip dimensions are unavailable")
+        clip_canvases.append(dimensions)
         count = int(video.get("nb_read_frames") or video.get("nb_frames") or 0)
         if not isinstance(overlap, int) or isinstance(overlap, bool) or overlap < 0 or overlap >= count:
             raise ValueError("Invalid overlap frame count")
         frame_counts.append(count - overlap)
+    target_w, target_h = clip_canvases[-1]
     out_file = pathlib.Path(output_path).resolve()
     out_file.parent.mkdir(parents=True, exist_ok=True)
     temp_part = out_file.with_name(out_file.stem + "." + uuid.uuid4().hex + ".part.mp4")
     cmd = [get_ffmpeg_path(), "-nostdin", "-hide_banner", "-loglevel", "error", "-y"]
     filters = []
-    for index, (path, overlap, count) in enumerate(zip(clip_paths, overlap_frames, frame_counts)):
+    for index, (path, overlap, count, dims) in enumerate(zip(clip_paths, overlap_frames, frame_counts, clip_canvases)):
         cmd.extend(["-i", str(path)])
-        filters.append(f"[{index}:v:0]trim=start_frame={overlap},setpts=PTS-STARTPTS[v{index}]")
+        scale_part = f",scale={target_w}:{target_h}:force_original_aspect_ratio=increase,crop={target_w}:{target_h},setsar=1" if dims != (target_w, target_h) else ""
+        filters.append(f"[{index}:v:0]trim=start_frame={overlap},setpts=PTS-STARTPTS{scale_part}[v{index}]")
         start = round(overlap / fps * 48000)
         end = round((overlap + count) / fps * 48000)
         filters.append(f"[{index}:a:0]aresample=48000,atrim=start_sample={start}:end_sample={end},asetpts=PTS-STARTPTS,apad,atrim=end_sample={end-start}[a{index}]")

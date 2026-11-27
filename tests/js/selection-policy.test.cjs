@@ -16,7 +16,7 @@ test('interactive mode transitions choose the matching managed workflow',()=>{
 test('Pika selection owns its required settings without deleting attached inputs',()=>{
  const name=Object.keys(C.PIKA)[0],references=[{kind:'video',alias:'source'}];
  const s=C.normalizeSelection({mode:'text',model_profile:'singularity',render_method:'spectrum',steps:20,sampling:{cfg:8},enable_refine:true,audio_refinement:{enabled:true},control:{enabled:true},references,loras:[{name,enabled:true,strength:.3},{name:'style',enabled:true}]},'pika',caps);
- assert.equal(s.model_profile,'original');assert.equal(s.render_method,'native');assert.equal(s.steps,4);assert.equal(s.loras.filter(x=>x.enabled).length,1);assert.equal(s.loras[0].strength,1);assert.equal(s.sampling.cfg,1);assert.equal(s.enable_refine,false);assert.equal(s.control.enabled,false);assert.deepEqual(s.references,references);assert.doesNotThrow(()=>C.validatePika(s));
+ assert.equal(s.model_profile,'original');assert.equal(s.render_method,'native');assert.equal(s.steps,4);assert.equal(s.loras.filter(x=>x.enabled).length,1);assert.equal(s.loras[0].strength,1);assert.equal(s.sampling.cfg,1);assert.equal(s.enable_refine,true);assert.equal(s.control.enabled,false);assert.equal(s.audio_refinement.enabled,false);assert.deepEqual(s.references,references);assert.doesNotThrow(()=>C.validatePika(s));
  assert.doesNotThrow(()=>C.validatePika(C.normalizeSelection({...s,sampling:{}},'reset',caps)));
 });
 test('hydration retains saved intent and exposes invalid combinations',()=>{
