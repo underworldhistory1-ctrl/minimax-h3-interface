@@ -269,7 +269,7 @@ class OrganizationMixin(ReuseGroupsMixin):
                 entry = {'assetId':ref.get('asset_id'), 'alias':str(ref.get('name','reference')).lstrip('@'),
                     'kind':ref.get('type','image'), 'role':ref.get('use_as','custom'), 'useAudio':ref.get('video_soundtrack',False),
                     'trimEnabled':bool(ref.get('trim')), 'trimStart':(ref.get('trim') or {}).get('start',0), 'trimDuration':(ref.get('trim') or {}).get('duration',15)}
-                for k in ('instruction', 'subject_group', 'panelOrder', 'storyboardMode', 'storyboardGroup', 'useOriginalResolution', 'fitVideo', 'imageFit', 'keyframeTime'):
+                for k in ('instruction', 'subject_group', 'panelOrder', 'storyboardMode', 'storyboardGroup', 'useOriginalResolution', 'fitVideo', 'imageFit', 'keyframeTime', 'audioTimed'):
                     if k in ref: entry[k] = ref[k]
                 draft['refs'].append(entry)
             for ref in settings.get('frame_references', []):

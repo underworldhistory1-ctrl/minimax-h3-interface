@@ -234,3 +234,49 @@ test('combinatorial simulation: 2,500+ inline keyframe workflows across models, 
   }
   assert.ok(simulated >= 2500, `Expected >= 2500 simulated inline-keyframe workflows, got ${simulated}`);
 });
+
+test('audio reference with audioTimed=true stays semantic (@mention) AND adds MiniMaxH3AddGuide at exact second', () => {
+  const { ctx } = loadStudioKeyframeHelpers({ continuation: null }, 362);
+  const refs = [
+    { alias: 'hero', kind: 'image', role: 'character identity', file: { name: 'hero.png' } },
+    { alias: 'hisoukaAudio', kind: 'audio', role: 'voice', audioTimed: true, keyframeTime: 4.0, trimEnabled: true, trimStart: 0.38, trimDuration: 1.63, localDuration: 3.11, file: { name: 'hisoka.wav' } },
+    { alias: 'bgm', kind: 'audio', role: 'music', audioTimed: false, keyframeTime: 1.0, localDuration: 5.0, file: { name: 'bgm.wav' } },
+  ];
+  const part = ctx.partitionReferences(refs);
+  assert.deepEqual([...part.semanticRefs.map(r => r.alias)], ['hero', 'hisoukaAudio', 'bgm']);
+  assert.deepEqual([...part.inlineKeyframes.map(r => r.alias)], ['hisoukaAudio']);
+  assert.equal(part.promotedAnchor, null);
+
+  const readout = ctx.keyframeReadoutText(refs[1]);
+  assert.equal(readout.bad, false);
+  assert.equal(readout.frameIdx, 96);
+
+  // Overflow respects trimDuration (4.0s + 1.63s = 5.63s <= 15.08s, whereas 14.5s + 1.63s > 15.08s)
+  assert.equal(ctx.keyframeReadoutText({ ...refs[1], keyframeTime: 14.5 }).bad, true);
+  assert.equal(ctx.keyframeReadoutText({ ...refs[1], keyframeTime: 13.0 }).bad, false);
+
+  const specRefs = part.semanticRefs.map(r => ({
+    asset_id: r.alias, alias: r.alias, kind: r.kind, role: r.role, instruction: '', filename: r.file.name,
+  }));
+  const specGuides = part.inlineKeyframes.map(r => ctx.inlineKeyframeGuideDescriptor(r));
+  const spec = {
+    model_profile: 'original', mode: 'refs', prompt_mode: 'guided',
+    source_prompt: '@hero speaks using @hisoukaAudio with @bgm in the background.',
+    width: 864, height: 480, target_frames: 362, steps: 8, seed: 42, render_method: 'native',
+    loras: C.activeLorasInModelOrder([{ name: 'pika_h3_flex_turbo_8step_hd_ref2va.safetensors', enabled: true, strength: 1 }]),
+    sampling: C.pikaSampling(C.pikaVariant('pika_h3_flex_turbo_8step_hd_ref2va.safetensors')),
+    references: specRefs, guides: specGuides,
+  };
+  spec.compiled_prompt = P.compilePrompt(spec).compiled_prompt;
+  const resolvedAssets = {
+    references: { hero: 'hero.png', hisoukaAudio: 'hisoka.wav', bgm: 'bgm.wav' },
+    guides: { 'ref_kf:hisoukaAudio': 'hisoka.wav', hisoukaAudio: 'hisoka.wav' },
+  };
+  const graph = B.buildGraph(spec, resolvedAssets, CAPS);
+  assert.ok(graph['6'].inputs['ref_audios.ref_audio_0'], 'Timed voice ref stays bound in ref_audios');
+  assert.ok(graph['6'].inputs['ref_audios.ref_audio_1'], 'Untimed music ref stays bound in ref_audios');
+  const guideNodes = Object.values(graph).filter(n => n.class_type === 'MiniMaxH3AddGuide');
+  assert.equal(guideNodes.length, 1);
+  assert.equal(guideNodes[0].inputs.frame_idx, 96);
+  assert.ok(guideNodes[0].inputs.audio && guideNodes[0].inputs.audio_vae);
+});

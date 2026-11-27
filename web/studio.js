@@ -378,7 +378,7 @@ function captureSettings(){
     references:refs?state.refs.map(ref=>({name:"@"+ref.alias,type:ref.kind,use_as:ref.role,
       file:ref.file.name,asset_id:ref.assetId||null,thumbnail:H3StudioUX.captureThumbnail(ref),video_soundtrack:!!ref.useAudio,
       trim:(ref.kind==="video"||ref.kind==="audio")&&ref.trimEnabled?{start:Number(ref.trimStart),duration:Number(ref.trimDuration)}:null,
-      subject_group:ref.subject_group||"",instruction:ref.instruction||"",...(ref.role==="storyboard"?{panel_order:ref.panelOrder||"",storyboard_mode:ref.storyboardMode??"auto",storyboard_group:ref.storyboardGroup||""}:{}),...(ref.role==="keyframe"?{keyframeTime:Number(ref.keyframeTime??0)}:{}),use_original_resolution:ref.useOriginalResolution===true,
+      subject_group:ref.subject_group||"",instruction:ref.instruction||"",...(ref.role==="storyboard"?{panel_order:ref.panelOrder||"",storyboard_mode:ref.storyboardMode??"auto",storyboard_group:ref.storyboardGroup||""}:{}),...(ref.role==="keyframe"||isTimedAudioRef(ref)?{keyframeTime:Number(ref.keyframeTime??0),...(isTimedAudioRef(ref)?{audioTimed:true}:{})}:{}),use_original_resolution:ref.useOriginalResolution===true,
       auto_fit:ref.kind==="video"?ref.fitVideo!==false:ref.kind==="image"?H3ReferencePolicy.imageResize(ref,$("fitImages").checked):null})):[],
     start_frame:state.mode==="frames"?state.first?.file.name||null:null,
     end_frame:state.mode==="frames"?state.last?.file.name||null:null,
@@ -546,7 +546,7 @@ async function loadLoras(){
 }
 $("refreshLoras").onclick=loadLoras;
 ["steps","refSize"].forEach(id => $(id).addEventListener("change",renderEstimates));
-$("durationSeconds").addEventListener("input",()=>{if(syncDuration()){renderEstimates();if(typeof renderContinuation==="function")renderContinuation();if(state.refs.some(r=>r.role==="keyframe")&&!document.activeElement?.classList?.contains("ref-keyframe-time"))renderRefs();}saveDraft();});
+$("durationSeconds").addEventListener("input",()=>{if(syncDuration()){renderEstimates();if(typeof renderContinuation==="function")renderContinuation();if(state.refs.some(r=>r.role==="keyframe"||isTimedAudioRef(r))&&!document.activeElement?.classList?.contains("ref-keyframe-time"))renderRefs();}saveDraft();});
 $("steps").addEventListener("input",()=>{renderMethodInfo();const value=Number($("steps").value);if(Number.isInteger(value)&&value>=Number($("steps").min)&&value<=Number($("steps").max))renderEstimates();else $("estimateNote").textContent="Enter "+$("steps").min+"–"+$("steps").max+" steps to update the estimate.";});
 $("renderMethod").addEventListener("change",()=>{if(method()==="turbo_ref"){$("steps").value="8";$("refSize").value="match";}else if(method()==="turbo")$("steps").value="6";else if(Number($("steps").value)<8)$("steps").value="20";applySelection('method');renderMethodInfo();renderLoras();renderEstimates();saveDraft();});
 document.querySelectorAll("#stepPresets button").forEach(button=>button.onclick=()=>{$("steps").value=button.dataset.steps;renderMethodInfo();renderEstimates();saveDraft();});
@@ -703,6 +703,7 @@ function renderRefs() {
   state.refs.forEach((ref,index) => {
     if(ref.restoreError){const missing=missingInputCard(ref,()=>removeShotReference(ref));missing.dataset.referenceIndex=String(index);missing.classList.add('reference-unit');$("refs").append(missing);return;}
     const isKeyframe=ref.role==="keyframe";
+    const isTimedAudio=isTimedAudioRef(ref);
     const card=document.createElement("details");card.className="ref compact-ref";card._reference=ref;card.open=!!ref.expanded;card._expandedAtRender=card.open;card.ontoggle=()=>{if(!card.isConnected)return;ref.expanded=card.open;card._expandedAtRender=card.open;if(card.open){const large=card.querySelector(".ref-expanded-preview");if(large&&!large.src)large.src=ref.previewUrl;}};
     card.dataset.referenceIndex=String(index);const head=document.createElement("summary");head.className="refhead";
     const icon=document.createElement("div");icon.className="icon";
@@ -723,14 +724,23 @@ function renderRefs() {
     const title=document.createElement("strong");
     const picPos=semanticImages.indexOf(ref);
     let kfBadge=null;
+    const kfBadgeText=()=>{
+      const kfSec=Number(ref.keyframeTime??0);
+      const secStr=(Number.isFinite(kfSec)?kfSec.toFixed(2):"?")+"s";
+      return isKeyframe?((ref.kind==="audio"?"Timed audio":ref.kind==="video"?"Timed video":"Keyframe")+" · "+secStr):("@ "+secStr);
+    };
     if(isKeyframe){
       title.textContent="@"+ref.alias+(ref.label&&ref.label!==ref.alias?" ("+ref.label+")":"");
       kfBadge=document.createElement("span");kfBadge.className="ref-kf-badge";
-      const kfSec=Number(ref.keyframeTime??0);
-      kfBadge.textContent=(ref.kind==="audio"?"Timed audio":ref.kind==="video"?"Timed video":"Keyframe")+" · "+(Number.isFinite(kfSec)?kfSec.toFixed(2):"?")+"s";
+      kfBadge.textContent=kfBadgeText();
       title.append(kfBadge);
     }else{
       title.textContent="@"+ref.alias+(ref.kind==="image"&&picPos>=0?" · Picture "+(picPos+1):"")+(ref.label&&ref.label!==ref.alias?" ("+ref.label+")":"")+" · "+ref.role;
+      if(isTimedAudio){
+        kfBadge=document.createElement("span");kfBadge.className="ref-kf-badge";
+        kfBadge.textContent=kfBadgeText();
+        title.append(kfBadge);
+      }
     }
     const remove=document.createElement("button");remove.className="button alt smallbtn";remove.textContent="Remove";remove.disabled=locked;
     remove.onclick=()=>{removeShotReference(ref);};
@@ -784,17 +794,18 @@ function renderRefs() {
     };
     roleWrap.append(roleLabel,role);fields.append(nameWrap,roleWrap);
     card.append(head,meta,fields);
-    if(isKeyframe){
+    let syncKfReadout=null;
+    const createKfTimeBox=(labelText)=>{
       const kfBox=document.createElement("div");kfBox.className="ref-keyframe-box";
-      const kfLabel=document.createElement("label");kfLabel.textContent=state.continuation?"AT TIME IN NEW CONTENT (s)":"AT TIME (s)";
+      const kfLabel=document.createElement("label");kfLabel.textContent=labelText;
       const kfRow=document.createElement("div");kfRow.className="ref-keyframe-row";
-      const kfInput=document.createElement("input");kfInput.type="number";kfInput.className="ref-keyframe-time";kfInput.min="0";kfInput.step="0.1";kfInput.setAttribute("aria-label","Keyframe timestamp in seconds for @"+ref.alias);
+      const kfInput=document.createElement("input");kfInput.type="number";kfInput.className="ref-keyframe-time";kfInput.min="0";kfInput.step="0.1";kfInput.setAttribute("aria-label","Timestamp in seconds for @"+ref.alias);
       kfInput.value=String(Number.isFinite(Number(ref.keyframeTime??0))?Number(ref.keyframeTime??0):0);kfInput.disabled=locked;
       const kfReadout=document.createElement("div");kfReadout.className="tip";kfReadout.style.marginTop="5px";
-      const syncKfReadout=()=>{
+      syncKfReadout=()=>{
         const infoObj=keyframeReadoutText(ref);
         kfReadout.textContent=infoObj.text;kfReadout.style.color=infoObj.bad?"var(--bad)":"";
-        if(kfBadge){const s=Number(ref.keyframeTime??0);kfBadge.textContent=(ref.kind==="audio"?"Timed audio":ref.kind==="video"?"Timed video":"Keyframe")+" · "+(Number.isFinite(s)?s.toFixed(2):"?")+"s";}
+        if(kfBadge)kfBadge.textContent=kfBadgeText();
       };
       const setKfTime=val=>{
         ref.keyframeTime=val;kfInput.value=String(val);syncKfReadout();saveDraft();updatePreviewLive();
@@ -812,17 +823,34 @@ function renderRefs() {
       }
       kfBox.append(kfLabel,kfRow,kfReadout);
       syncKfReadout();
-      card.append(kfBox);
+      return kfBox;
+    };
+    if(isKeyframe){
+      card.append(createKfTimeBox(state.continuation?"AT TIME IN NEW CONTENT (s)":"AT TIME (s)"));
     }
     if(ref.kind==="image"){
       const large=document.createElement("img");if(card.open)large.src=ref.previewUrl;large.loading="lazy";large.decoding="async";large.alt="Expanded preview of @"+ref.alias;large.className="ref-expanded-preview";card.append(large);
       const label=document.createElement("label"),fit=document.createElement("select");label.textContent="IMAGE FIT";for(const [value,title] of [["preserve","Preserve original proportions"],["crop","Crop to canvas"],["contain","Contain on canvas"]]){const o=document.createElement("option");o.value=value;o.textContent=title;fit.append(o);}fit.value=ref.imageFit||"preserve";fit.disabled=locked;fit.onchange=()=>{ref.imageFit=fit.value;updateRefFitPreview(ref).catch(e=>info(e.message,true));};card.append(label,fit);
     }
     H3ReferenceControls.addFields(card,ref,state.refs,locked,rerender=>{saveDraft();if(rerender)renderRefs();updatePreviewLive();});
-    H3ReferenceControls.addPreview(card,ref,()=>{if(!state.refs.includes(ref))return;if(fitReferenceTrim(ref)){renderRefs();saveDraft();}else updateRefDurationNotice();});
+    H3ReferenceControls.addPreview(card,ref,()=>{if(!state.refs.includes(ref))return;if(fitReferenceTrim(ref)){renderRefs();saveDraft();}else{updateRefDurationNotice();if(syncKfReadout)syncKfReadout();}});
     if(ref.kind==="audio"){
+      if(!isKeyframe){
+        const timeLabel=document.createElement("label"),timeToggle=document.createElement("input");
+        timeToggle.type="checkbox";timeToggle.checked=!!ref.audioTimed;timeToggle.disabled=locked||(kfDisabled&&!ref.audioTimed);
+        timeToggle.onchange=()=>{
+          ref.audioTimed=timeToggle.checked;
+          if(ref.audioTimed&&(ref.keyframeTime===undefined||ref.keyframeTime===null||!Number.isFinite(Number(ref.keyframeTime))))ref.keyframeTime=0;
+          saveDraft();renderRefs();renderEstimates();updatePreviewLive();
+        };
+        timeLabel.append(timeToggle,document.createTextNode(" Appear at specific time (s)"));
+        card.append(timeLabel);
+        if(ref.audioTimed){
+          card.append(createKfTimeBox(state.continuation?"APPEAR AT TIME IN NEW CONTENT (s)":"APPEAR AT TIME (s)"));
+        }
+      }
       const label=document.createElement("label"),toggle=document.createElement("input");toggle.type="checkbox";toggle.checked=!!ref.trimEnabled;toggle.disabled=locked;toggle.onchange=()=>{ref.trimEnabled=toggle.checked;fitReferenceTrim(ref);renderRefs();saveDraft();};label.append(toggle,document.createTextNode(" Trim audio range"));card.append(label);
-      if(ref.trimEnabled){let useInput;for(const [key,title,min,max] of [["trimStart","Audio start (s)",0,3600],["trimDuration","Use audio (s)",0.2,15]]){const label=document.createElement("label"),input=document.createElement("input");label.textContent=title;input.type="number";input.min=min;input.max=max;input.step=".01";input.value=ref[key]??(key==="trimStart"?0:15);input.disabled=locked;if(key==="trimDuration")useInput=input;input.oninput=()=>{ref[key]=Number(input.value);if(key==="trimStart"&&fitReferenceTrim(ref)&&useInput)useInput.value=ref.trimDuration;card.referencePreview?.update();updateRefDurationNotice();saveDraft();};card.append(label,input);}}
+      if(ref.trimEnabled){let useInput;for(const [key,title,min,max] of [["trimStart","Audio start (s)",0,3600],["trimDuration","Use audio (s)",0.2,15]]){const label=document.createElement("label"),input=document.createElement("input");label.textContent=title;input.type="number";input.min=min;input.max=max;input.step=".01";input.value=ref[key]??(key==="trimStart"?0:15);input.disabled=locked;if(key==="trimDuration")useInput=input;input.oninput=()=>{ref[key]=Number(input.value);if(key==="trimStart"&&fitReferenceTrim(ref)&&useInput)useInput.value=ref.trimDuration;card.referencePreview?.update();updateRefDurationNotice();if(syncKfReadout)syncKfReadout();saveDraft();};card.append(label,input);}}
     }
     const insert=document.createElement("button");insert.type="button";insert.className="button alt smallbtn ref-insert";insert.textContent="Insert @"+ref.alias+" into prompt";insert.title=insert.textContent;insert.disabled=locked;insert.hidden=isKeyframe&&ref!==promotedAnchor;insert.onclick=()=>insertReferenceMention(ref.alias,true);card.append(insert);
     if(ref.kind==="video"){
@@ -1029,9 +1057,12 @@ function maxKeyframeFrames(){
   const ctx=state.continuation?Number(state.continuation.context_length??39):0;
   return Math.max(1,total-ctx);
 }
+function isTimedAudioRef(ref){
+  return !!(ref&&ref.kind==="audio"&&ref.role!=="keyframe"&&ref.audioTimed);
+}
 function partitionReferences(refs=state.refs){
   const ordered=["image","video","audio"].flatMap(k=>(refs||[]).filter(r=>r.kind===k));
-  const inlineKeyframes=ordered.filter(r=>r.role==="keyframe");
+  const inlineKeyframes=ordered.filter(r=>r.role==="keyframe"||isTimedAudioRef(r));
   let semanticRefs=ordered.filter(r=>r.role!=="keyframe");
   let promotedAnchor=null;
   if(inlineKeyframes.length>0&&semanticRefs.length===0){
@@ -1496,7 +1527,7 @@ async function checkConnection() {
         if(state.refs.some(ref=>ref.kind==="video"))modeNodes.push("LoadVideo","GetVideoComponents","ImageFromBatch");
         if(state.refs.some(ref=>ref.kind==="video"&&ref.useAudio))modeNodes.push("TrimAudioDuration");
         if(state.refs.some(ref=>ref.kind==="audio"))modeNodes.push("LoadAudio");
-        if(state.refs.some(ref=>ref.role==="keyframe"))modeNodes.push("MiniMaxH3AddGuide");
+        if(state.refs.some(ref=>ref.role==="keyframe"||isTimedAudioRef(ref)))modeNodes.push("MiniMaxH3AddGuide");
       }
       if(state.loras.some(item=>item.enabled))modeNodes.push("LoraLoaderModelOnly");
       if(method()==="turbo")modeNodes.push("MiniMaxH3TurboLoRA","MiniMaxH3TurboSampler");
@@ -1698,6 +1729,7 @@ async function generate() {
       }
       for(const ref of orderedRefs()){
         const isKf=ref.role==="keyframe";
+        const isTimedAudio=isTimedAudioRef(ref);
         const result=await sendFile(ref.file,ref.kind,isKf?("Keyframe @"+ref.alias):("@"+ref.alias),ref);
         ref.meta=result;
         if(ref.kind==="video"&&result.trim_adjusted){ref.trimDuration=result.trim_duration;renderRefs();saveDraft();}
@@ -1705,11 +1737,11 @@ async function generate() {
           ref.useAudio=false;renderRefs();
           throw Error("Video @"+ref.alias+" has no soundtrack. Its audio option was turned off; retry to use its picture only.");
         }
-        if(isKf){
+        if(isKf||isTimedAudio){
           const check=keyframeReadoutText(ref);
           if(check.bad)throw Error("@"+ref.alias+" keyframe: "+check.text);
           uploads.guides.set(ref,result.name);
-          if(ref===promotedAnchor)uploads.refs.set(ref,result.name);
+          if(!isKf||ref===promotedAnchor)uploads.refs.set(ref,result.name);
         }else{
           uploads.refs.set(ref,result.name);
         }
